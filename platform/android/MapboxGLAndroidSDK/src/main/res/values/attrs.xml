@@ -186,6 +186,7 @@
         <attr name="mapbox_pulsingLocationCircleColor" format="color" />
         <attr name="mapbox_pulsingLocationCircleDuration" format="float" />
         <attr name="mapbox_pulsingLocationCircleAlpha" format="float" />
+        <attr name="mapbox_pulsingLocationCircleFrequency" format="float" />
         <attr name="mapbox_pulsingLocationCircleInterpolator" format="string" />
 
     </declare-styleable>

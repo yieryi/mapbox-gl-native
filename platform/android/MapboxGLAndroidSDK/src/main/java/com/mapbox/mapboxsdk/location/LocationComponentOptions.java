@@ -85,6 +85,11 @@ public class LocationComponentOptions implements Parcelable {
    */
   private static final float CIRCLE_PULSING_FINAL_ALPHA_DEFAULT = 0.6f;
 
+  /**
+   * Default maximum radius of the LocationComponent circle when it's pulsing.
+   */
+  public static final float CIRCLE_PULSING_FINAL_RADIUS_DEFAULT = 60f;
+
   private float accuracyAlpha;
   private int accuracyColor;
   private int backgroundDrawableStale;
@@ -130,8 +135,8 @@ public class LocationComponentOptions implements Parcelable {
   private float trackingAnimationDurationMultiplier;
   private boolean compassAnimationEnabled;
   private boolean accuracyAnimationEnabled;
-  private boolean pulsingCircleEnabled;
-  private boolean pulsingCircleFadeEnabled;
+  private Boolean pulsingCircleEnabled;
+  private Boolean pulsingCircleFadeEnabled;
   private Integer pulseColor;
   private float pulseSingleDuration;
   private float pulseFrequency;
@@ -172,8 +177,8 @@ public class LocationComponentOptions implements Parcelable {
     float trackingAnimationDurationMultiplier,
     boolean compassAnimationEnabled,
     boolean accuracyAnimationEnabled,
-    boolean pulsingCircleEnabled,
-    boolean pulsingCircleFadeEnabled,
+    Boolean pulsingCircleEnabled,
+    Boolean pulsingCircleFadeEnabled,
     Integer pulsingCircleColor,
     float pulsingCircleDuration,
     float pulsingCircleFrequency,
@@ -811,7 +816,7 @@ public class LocationComponentOptions implements Parcelable {
    *
    * @return whether the LocationComponent's pulsing circle is enabled
    */
-  public boolean pulseEnabled() {
+  public Boolean pulseEnabled() {
     return pulsingCircleEnabled;
   }
 
@@ -822,7 +827,7 @@ public class LocationComponentOptions implements Parcelable {
    *
    * @return whether fading of the LocationComponent's pulsing circle is enabled
    */
-  public boolean pulsingCircleFadeEnabled() {
+  public Boolean pulsingCircleFadeEnabled() {
     return pulsingCircleFadeEnabled;
   }
 
@@ -905,8 +910,8 @@ public class LocationComponentOptions implements Parcelable {
       + "trackingMultiFingerMoveThreshold=" + trackingMultiFingerMoveThreshold + ", "
       + "layerAbove=" + layerAbove
       + "layerBelow=" + layerBelow
-      + "enablePulsingCircle=" + pulsingCircleEnabled
-      + "enablePulsingCircleFade=" + pulsingCircleFadeEnabled
+      + "pulsingCircleEnabled=" + pulsingCircleEnabled
+      + "pulsingCircleFadeEnabled=" + pulsingCircleFadeEnabled
       + "pulseColor=" + pulseColor
       + "pulseSingleDuration=" + pulseSingleDuration
       + "pulseFrequency=" + pulseFrequency
@@ -1310,6 +1315,35 @@ public class LocationComponentOptions implements Parcelable {
           "of a single pulse.");
       }*/
 
+      if (locationComponentOptions.pulseEnabled() == null) {
+
+        Log.d("LCOptions", "autoBuild: this.pulsingCircleFadeEnabled == null ");
+
+        String pulsingSetupError = "";
+
+        if (locationComponentOptions.pulsingCircleFadeEnabled() != null) {
+          pulsingSetupError += " pulsingCircleFadeEnabled";
+        }
+        if (locationComponentOptions.pulseColor() != null) {
+          pulsingSetupError += " pulsingCircleColor";
+        }
+        if ((Float) locationComponentOptions.pulseSingleDuration() == null) {
+
+          pulsingSetupError += " pulsingCircleDuration";
+        }
+        if (locationComponentOptions.pulseAlpha() >= 0 && locationComponentOptions.pulseAlpha() <= 1) {
+
+          pulsingSetupError += " accuracyAlpha";
+        }
+        if (locationComponentOptions.pulseInterpolator() != null) {
+          pulsingSetupError += " pulsingCircleInterpolator";
+        }
+        if (!pulsingSetupError.isEmpty()) {
+          throw new IllegalStateException("You've set up the following pulsing circle options but have not enabled" +
+            " the pulsing circle via the LocationComponentOptions builder:" + pulsingSetupError + ". Enable the pulsing" +
+            " circle if you're going to set pulsing options.");
+        }
+      }
       return locationComponentOptions;
     }
 
@@ -1358,8 +1392,8 @@ public class LocationComponentOptions implements Parcelable {
     private Float trackingAnimationDurationMultiplier;
     private Boolean compassAnimationEnabled;
     private Boolean accuracyAnimationEnabled;
-    private boolean pulsingCircleEnabled;
-    private boolean pulsingCircleFadeEnabled;
+    private Boolean pulsingCircleEnabled;
+    private Boolean pulsingCircleFadeEnabled;
     private int pulsingCircleColor;
     private float pulsingCircleDuration;
     private float pulsingCircleFrequency;

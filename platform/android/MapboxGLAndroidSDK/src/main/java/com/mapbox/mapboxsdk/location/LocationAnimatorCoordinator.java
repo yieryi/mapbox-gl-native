@@ -6,17 +6,11 @@ import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.VisibleForTesting;
-import android.util.Log;
 import android.util.SparseArray;
-import android.view.animation.AccelerateInterpolator;
-import android.view.animation.BounceInterpolator;
-import android.view.animation.DecelerateInterpolator;
-import android.view.animation.Interpolator;
 import android.view.animation.LinearInterpolator;
 
 import com.mapbox.mapboxsdk.camera.CameraPosition;
 import com.mapbox.mapboxsdk.geometry.LatLng;
-import com.mapbox.mapboxsdk.location.modes.PulseMode;
 import com.mapbox.mapboxsdk.log.Logger;
 import com.mapbox.mapboxsdk.maps.MapboxMap;
 import com.mapbox.mapboxsdk.maps.Projection;
@@ -50,6 +44,7 @@ final class LocationAnimatorCoordinator {
   private final Projection projection;
   private Location previousLocation;
   private float previousAccuracyRadius = -1;
+  private float previousPulsingRadius = -1;
   private float previousCompassBearing = -1;
   private long locationUpdateTimestamp = -1;
   private float durationMultiplier;
@@ -58,6 +53,8 @@ final class LocationAnimatorCoordinator {
   private boolean compassAnimationEnabled;
   private boolean accuracyAnimationEnabled;
   private PulsingLocationCircleAnimator pulsingLocationCircleAnimator;
+  private LocationComponentOptions locationComponentOptions;
+  private float targetPulsingRadius;
 
   @VisibleForTesting
   int maxAnimationFps = Integer.MAX_VALUE;
@@ -66,10 +63,12 @@ final class LocationAnimatorCoordinator {
   final SparseArray<MapboxAnimator.AnimationsValueChangeListener> listeners = new SparseArray<>();
 
   LocationAnimatorCoordinator(@NonNull Projection projection, @NonNull MapboxAnimatorSetProvider animatorSetProvider,
-                              @NonNull MapboxAnimatorProvider animatorProvider) {
+                              @NonNull MapboxAnimatorProvider animatorProvider,
+                              @NonNull LocationComponentOptions locationComponentOptions) {
     this.projection = projection;
     this.animatorProvider = animatorProvider;
     this.animatorSetProvider = animatorSetProvider;
+    this.locationComponentOptions = locationComponentOptions;
   }
 
   void updateAnimatorListenerHolders(@NonNull Set<AnimatorListenerHolder> listenerHolders) {
@@ -142,6 +141,35 @@ final class LocationAnimatorCoordinator {
     this.previousAccuracyRadius = targetAccuracyRadius;
   }
 
+  void startPulsing(MapboxMap mapboxMap) {
+    if (previousPulsingRadius < 0) {
+      previousPulsingRadius = targetPulsingRadius;
+    }
+
+    pulsingLocationCircleAnimator = new PulsingLocationCircleAnimator(
+      new MapboxAnimator.AnimationsValueChangeListener() {
+        @Override
+        public void onNewAnimationValue(Object value) {
+
+          // TODO: Set new radius here ?
+          Logger.d(TAG, "onNewAnimationValue, new value = " + value);
+          targetPulsingRadius = (Float) value;
+
+        }
+      }, getMaxAnimationFps(), locationComponentOptions);
+
+    pulsingLocationCircleAnimator.onAnimationUpdate(pulsingLocationCircleAnimator);
+
+    float previousPulsingRadius = getPreviousPulsingRadius();
+
+    updatePulsingAnimators(targetPulsingRadius, previousPulsingRadius);
+
+    playAnimators(locationComponentOptions.pulseEnabled() ? ACCURACY_RADIUS_ANIMATION_DURATION : 0,
+      MapboxAnimator.ANIMATOR_PULSING_CIRCLE_RADIUS);
+
+    this.previousPulsingRadius = targetPulsingRadius;
+  }
+
   void feedNewZoomLevel(double targetZoomLevel, @NonNull CameraPosition currentCameraPosition, long animationDuration,
                         @Nullable MapboxMap.CancelableCallback callback) {
     updateZoomAnimator((float) targetZoomLevel, (float) currentCameraPosition.zoom, callback);
@@ -152,32 +180,6 @@ final class LocationAnimatorCoordinator {
                    @Nullable MapboxMap.CancelableCallback callback) {
     updateTiltAnimator((float) targetTilt, (float) currentCameraPosition.tilt, callback);
     playAnimators(animationDuration, ANIMATOR_TILT);
-  }
-
-  void startLocationCirclePulsing(LocationComponentOptions options, MapboxMap mapboxMap) {
-    pulsingLocationCircleAnimator = new PulsingLocationCircleAnimator(retrievePulseInterpolator(
-      options.pulseInterpolator()), mapboxMap, options);
-    pulsingLocationCircleAnimator.startPulsingAnimation();
-  }
-
-  void stopPulsingAnimation() {
-    pulsingLocationCircleAnimator.stopPulsingAnimation();
-  }
-
-  void pausePulsingAnimation() {
-    pulsingLocationCircleAnimator.pausePulsingAnimation();
-  }
-
-  void resumePulsingAnimation() {
-    pulsingLocationCircleAnimator.resumePulsingAnimation();
-  }
-
-  void pulsingAnimationIsRunning() {
-    pulsingLocationCircleAnimator.pulsingAnimationIsRunning();
-  }
-
-  boolean pulsingAnimationIsStarted() {
-    return pulsingLocationCircleAnimator.pulsingAnimationIsStarted();
   }
 
   private LatLng getPreviousLayerLatLng() {
@@ -225,6 +227,17 @@ final class LocationAnimatorCoordinator {
     return previousRadius;
   }
 
+  private float getPreviousPulsingRadius() {
+    MapboxAnimator animator = animatorArray.get(MapboxAnimator.ANIMATOR_PULSING_CIRCLE_RADIUS);
+    float previousRadius;
+    if (animator != null) {
+      previousRadius = (float) animator.getAnimatedValue();
+    } else {
+      previousRadius = previousPulsingRadius;
+    }
+    return previousRadius;
+  }
+
   private void updateLayerAnimators(LatLng previousLatLng, LatLng targetLatLng,
                                     float previousBearing, float targetBearing) {
     createNewLatLngAnimator(ANIMATOR_LAYER_LATLNG, previousLatLng, targetLatLng);
@@ -255,6 +268,10 @@ final class LocationAnimatorCoordinator {
 
   private void updateAccuracyAnimators(float targetAccuracyRadius, float previousAccuracyRadius) {
     createNewFloatAnimator(ANIMATOR_LAYER_ACCURACY, previousAccuracyRadius, targetAccuracyRadius);
+  }
+
+  private void updatePulsingAnimators(float targetPulsingRadius, float previousPulsingRadius) {
+    createNewFloatAnimator(MapboxAnimator.ANIMATOR_PULSING_CIRCLE_RADIUS, previousPulsingRadius, targetPulsingRadius);
   }
 
   private void updateZoomAnimator(float targetZoomLevel, float previousZoomLevel,
@@ -324,7 +341,13 @@ final class LocationAnimatorCoordinator {
         animators.add(animator);
       }
     }
-    animatorSetProvider.startAnimation(animators, new LinearInterpolator(), duration);
+    if (animatorTypes[0] == MapboxAnimator.ANIMATOR_PULSING_CIRCLE_RADIUS) {
+      Logger.d(TAG, "animatorTypes[0] == MapboxAnimator.ANIMATOR_PULSING_CIRCLE_RADIUS");
+      animatorSetProvider.startAnimation(animators, pulsingLocationCircleAnimator.retrievePulseInterpolator(locationComponentOptions.pulseInterpolator()), duration);
+    } else {
+      Logger.d(TAG, "animatorTypes[0] != MapboxAnimator.ANIMATOR_PULSING_CIRCLE_RADIUS");
+      animatorSetProvider.startAnimation(animators, new LinearInterpolator(), duration);
+    }
   }
 
   void resetAllCameraAnimations(@NonNull CameraPosition currentCameraPosition, boolean isGpsNorth) {
@@ -425,18 +448,7 @@ final class LocationAnimatorCoordinator {
       this.maxAnimationFps = maxAnimationFps;
   }
 
-  private Interpolator retrievePulseInterpolator(String interpolatorAnimationType) {
-    switch(interpolatorAnimationType) {
-      case PulseMode.LINEAR:
-        return new LinearInterpolator();
-      case PulseMode.ACCELERATE:
-        return new AccelerateInterpolator();
-      case PulseMode.DECELERATE:
-        return new DecelerateInterpolator();
-      case PulseMode.BOUNCE:
-        return new BounceInterpolator();
-      default:
-        return new DecelerateInterpolator();
-    }
+  public int getMaxAnimationFps() {
+    return maxAnimationFps;
   }
 }

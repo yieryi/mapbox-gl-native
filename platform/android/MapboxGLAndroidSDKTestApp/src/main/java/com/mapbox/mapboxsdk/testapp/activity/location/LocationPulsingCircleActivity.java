@@ -54,16 +54,12 @@ public class LocationPulsingCircleActivity extends AppCompatActivity implements 
   private static final String DEFAULT_LOCATION_CIRCLE_INTERPOLATOR_PULSE_MODE = PulseMode.DECELERATE;
   private static final boolean DEFAULT_LOCATION_CIRCLE_PULSE_FADE_MODE = false;
 
-  private static int DEFAULT_LOCATION_CIRCLE_PULSE_COLOR;
-
   private Location lastLocation;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_location_layer_pulsing_circle);
-
-    DEFAULT_LOCATION_CIRCLE_PULSE_COLOR = ContextCompat.getColor(this, R.color.mapbox_location_layer_blue);
 
     mapView = findViewById(R.id.mapView);
 
@@ -131,19 +127,19 @@ public class LocationPulsingCircleActivity extends AppCompatActivity implements 
       locationComponent = mapboxMap.getLocationComponent();
 
       locationComponent.activateLocationComponent(
-          LocationComponentActivationOptions
-              .builder(this, style)
-              .locationComponentOptions(buildLocationComponentOptions(
-                  "waterway-label",
-                  DEFAULT_LOCATION_CIRCLE_PULSE_COLOR,
-                  DEFAULT_LOCATION_CIRCLE_PULSE_ALPHA,
-                  DEFAULT_LOCATION_CIRCLE_PULSE_DURATION))
-              .useDefaultLocationEngine(true)
-              .locationEngineRequest(new LocationEngineRequest.Builder(750)
-                  .setFastestInterval(750)
-                  .setPriority(LocationEngineRequest.PRIORITY_HIGH_ACCURACY)
-                  .build())
-              .build());
+        LocationComponentActivationOptions
+          .builder(this, style)
+          .locationComponentOptions(buildLocationComponentOptions(
+            "waterway-label",
+            ContextCompat.getColor(this, R.color.mapbox_gray_dark ),
+            DEFAULT_LOCATION_CIRCLE_PULSE_ALPHA,
+            DEFAULT_LOCATION_CIRCLE_PULSE_DURATION))
+          .useDefaultLocationEngine(true)
+          .locationEngineRequest(new LocationEngineRequest.Builder(750)
+            .setFastestInterval(750)
+            .setPriority(LocationEngineRequest.PRIORITY_HIGH_ACCURACY)
+            .build())
+          .build());
 
       locationComponent.setLocationComponentEnabled(true);
       locationComponent.setCameraMode(CameraMode.TRACKING);
