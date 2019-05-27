@@ -113,15 +113,7 @@ android {
         // proguard config for .aar
         consumerProguardFiles 'proguard-rules.pro'
     }
-
-    // avoid naming conflicts, force usage of prefix
-    resourcePrefix 'mapbox_'
-
-    sourceSets {
-        // limit amount of exposed library resources
-        main.res.srcDirs += 'src/main/res-public'
-    }
-
+    
     lintOptions {
         disable 'MissingTranslation', 'TypographyQuotes', 'ObsoleteLintCustomCheck', 'MissingPermission', 'WrongThreadInterprocedural'
         checkAllWarnings true
