@@ -12,6 +12,7 @@ import android.support.annotation.Size;
 import android.support.annotation.UiThread;
 import android.text.TextUtils;
 import android.view.View;
+
 import com.mapbox.android.gestures.AndroidGesturesManager;
 import com.mapbox.android.gestures.MoveGestureDetector;
 import com.mapbox.android.gestures.RotateGestureDetector;
@@ -829,7 +830,11 @@ public final class MapboxMap {
       nativeMapView.setStyleJson(builder.getJson());
     } else {
       // user didn't provide a `from` component, load a blank style instead
-      nativeMapView.setStyleJson("{}");
+      nativeMapView.setStyleJson("{\n" +
+        "    \"version\": 8,\n" +
+        "    \"sources\": {},\n" +
+        "    \"layers\": []\n" +
+        "}");
     }
   }
 

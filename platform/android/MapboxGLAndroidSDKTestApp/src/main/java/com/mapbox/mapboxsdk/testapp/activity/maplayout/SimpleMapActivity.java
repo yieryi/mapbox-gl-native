@@ -34,7 +34,6 @@ public class SimpleMapActivity extends AppCompatActivity {
     mapView = findViewById(R.id.mapView);
     mapView.onCreate(savedInstanceState);
     mapView.getMapAsync(mapboxMap -> {
-      this.mapboxMap = mapboxMap;
       GeoJsonSource geoJsonSource = new GeoJsonSource("ID");
       geoJsonSource.setUrl("asset://points.geojson");
 
@@ -46,6 +45,7 @@ public class SimpleMapActivity extends AppCompatActivity {
       mapboxMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(38.901057, -77.036207), 12));
       mapboxMap.setStyle(
         new Style.Builder()
+//          .fromUrl("asset://streets.json")
           .withSource(geoJsonSource)
           .withLayer(symbolLayer)
           .withImage("test", image)
