@@ -27,5 +27,26 @@ std::string lowercase(const std::string &string) {
     return result;
 }
 
+std::string formatNumber(double number, const std::string& localeId, const std::string& currency,
+                         uint8_t minFractionDigits, uint8_t maxFractionDigits) {
+
+    NSNumberFormatter *_numberFormatter;
+    _numberFormatter = [[NSNumberFormatter alloc] init];
+    _numberFormatter.locale = !localeId.empty() ? [NSLocale localeWithLocaleIdentifier:@(localeId.c_str())] : nil;
+    _numberFormatter.currencyCode = !currency.empty() ? @(currency.c_str()) : nil;
+    if (currency.empty()) {
+        _numberFormatter.minimumFractionDigits = minFractionDigits;
+        _numberFormatter.maximumFractionDigits = maxFractionDigits;
+        _numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
+        _numberFormatter.currencyCode = nil;
+    } else {
+        _numberFormatter.numberStyle = NSNumberFormatterCurrencyStyle;
+        _numberFormatter.currencyCode = @(currency.c_str());
+    }
+    NSString *formatted = [_numberFormatter stringFromNumber:@(number)];
+    std::string result = std::string([formatted UTF8String]);
+    return result;
+}
+
 }
 }

@@ -56,6 +56,7 @@ macro(mbgl_platform_core)
         PRIVATE platform/default/src/mbgl/text/unaccent.cpp
         PRIVATE platform/default/include/mbgl/text/unaccent.hpp
         PRIVATE platform/default/src/mbgl/util/utf.cpp
+        PRIVATE platform/default/src/mbgl/util/format_number.cpp
 
         # Image handling
         PRIVATE platform/default/src/mbgl/util/image.cpp
@@ -84,9 +85,14 @@ macro(mbgl_platform_core)
     target_add_mason_package(mbgl-core PUBLIC libpng)
     target_add_mason_package(mbgl-core PUBLIC libjpeg-turbo)
 
+    # Ignore warning in some CI environments caused by ICU header unistr.h
+    set_source_files_properties(platform/default/src/mbgl/util/format_number.cpp PROPERTIES COMPILE_FLAGS -Wno-error=shadow)
+
     target_link_libraries(mbgl-core
         PRIVATE nunicode
-        PRIVATE icu
+        PRIVATE icuuc
+        PRIVATE icui18n
+        PRIVATE icudata
         PUBLIC -lz
     )
 

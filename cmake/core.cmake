@@ -19,13 +19,18 @@ target_link_libraries(mbgl-core PRIVATE
     wagyu
 )
 
+# Do not use the vendored version of ICU for linux
+if(NOT MBGL_PLATFORM STREQUAL "linux")
+    set(ICU_LIBRARY "icu")
+endif()
+
 # FIXME: We should not leak these many
 # libraries in our public interface.
 target_link_libraries(mbgl-core PUBLIC
     boost
     geojson.hpp
     geometry.hpp
-    icu
+    ${ICU_LIBRARY}
     optional
     polylabel
     protozero

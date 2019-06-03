@@ -494,6 +494,9 @@ jobs:
     steps:
       - install-dependencies: { ccache: false }
       - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
+      - run:
           name: Fetch 'origin/master' branch
           command: git fetch origin master:refs/remotes/origin/master
       - run:
@@ -724,6 +727,9 @@ jobs:
       WITH_CXX11ABI: 0
     steps:
       - install-dependencies
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - build-node
       - save-dependencies
       - run-node-linux-tests
@@ -743,6 +749,9 @@ jobs:
       WITH_EGL: 1
     steps:
       - install-dependencies
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - build-node
       - save-dependencies
       - run-node-linux-tests-recycle-map
@@ -782,6 +791,9 @@ jobs:
       WITH_CXX11ABI: 1
     steps:
       - install-dependencies
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - build-linux
       - save-dependencies
 
@@ -803,6 +815,9 @@ jobs:
       UBSAN_OPTIONS: print_stacktrace=1:color=always:print_summary=1
     steps:
       - install-dependencies
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - setup-llvm-symbolizer
       - build-test
       - save-dependencies
@@ -825,6 +840,9 @@ jobs:
       TSAN_OPTIONS: color=always:print_summary=1
     steps:
       - install-dependencies
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - setup-llvm-symbolizer
       - build-test
       - save-dependencies
@@ -845,6 +863,9 @@ jobs:
       DISPLAY: :0
     steps:
       - install-dependencies
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - build-linux
       - build-benchmark
       - build-test
@@ -868,6 +889,9 @@ jobs:
       WITH_COVERAGE: 1
     steps:
       - install-dependencies
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - build-linux
       - build-benchmark
       - build-test
@@ -903,6 +927,9 @@ jobs:
       - run:
           name: Install doxygen
           command: apt update && apt install -y doxygen
+      - run:
+          name: Install libicu-dev
+          command: apt update && apt install -y software-properties-common && add-apt-repository -y ppa:janisozaur/libicu && apt update && apt install -y libicu-dev
       - build-linux
       - save-dependencies
       - run:
