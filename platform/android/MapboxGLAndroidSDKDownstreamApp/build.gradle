@@ -1,29 +1,20 @@
 apply plugin: 'com.android.application'
-apply from: "${rootDir}/gradle/native-build.gradle"
 
 android {
-    compileSdkVersion androidVersions.compileSdkVersion
+    compileSdkVersion 28
 
     defaultConfig {
-        applicationId "com.mapbox.mapboxsdk.testapp"
+        applicationId "com.mapbox.mapboxsdk.downstream"
         minSdkVersion androidVersions.minSdkVersion
         targetSdkVersion androidVersions.targetSdkVersion
-        versionCode 13
-        versionName "6.0.0"
+        versionCode 1
+        versionName "0.0.1"
         testInstrumentationRunner "com.mapbox.mapboxsdk.InstrumentationRunner"
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    nativeBuild(["example-custom-layer"])
-
-    packagingOptions {
-        exclude 'META-INF/LICENSE.txt'
-        exclude 'META-INF/NOTICE.txt'
-        exclude 'LICENSE.txt'
     }
 
     lintOptions {
@@ -35,12 +26,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            testCoverageEnabled true
-            minifyEnabled false
-            shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
         release {
             minifyEnabled true
             shrinkResources true
@@ -79,6 +64,10 @@ dependencies {
     androidTestImplementation dependenciesList.testEspressoIntents
     androidTestImplementation dependenciesList.testEspressoContrib
     androidTestImplementation dependenciesList.testUiAutomator
+
+    implementation('com.mapbox.mapboxsdk:mapbox-android-plugin-annotation-v7:0.6.0') {
+        exclude group: 'com.mapbox.mapboxsdk', module: 'mapbox-android-sdk'
+    }
 }
 
 apply from: "${rootDir}/gradle/gradle-make.gradle"
