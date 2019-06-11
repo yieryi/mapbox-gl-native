@@ -41,6 +41,22 @@ static RendererObserver& nullObserver() {
     return observer;
 }
 
+namespace {
+
+struct {
+    double totalTime = 0.0;
+    double orchestrationTime = 0.0;
+    double orchestrationTimePeak = 0.0;
+    double orchestrationPercentagePeak = 0.0;
+    double uploadTime = 0.0;
+    double uploadTimePeak = 0.0;
+    double uploadPercentagePeak = 0.0;
+    unsigned failedFrames = 0u;
+    unsigned framesSavedWithBackgroundOrchestration = 0u;
+} stats;
+
+} // namespace
+
 Renderer::Impl::Impl(gfx::RendererBackend& backend_,
                      float pixelRatio_,
                      const optional<std::string> programCacheDir_,
@@ -64,6 +80,18 @@ Renderer::Impl::Impl(gfx::RendererBackend& backend_,
 }
 
 Renderer::Impl::~Impl() {
+    Log::Warning(Event::General,
+                "Overall stats: orchestration took %f %% of %f ms of the total rendering time",
+                stats.orchestrationTime / stats.totalTime * 100.0, stats.totalTime);
+    Log::Warning(Event::General,
+                "Overall stats: orchestration peak value: %f ms, orchestration peak frame time percentage: %f",
+                stats.orchestrationTimePeak, stats.orchestrationPercentagePeak);
+    Log::Warning(Event::General,
+                 "Overall stats: upload peak value: %f ms, upload peak frame time percentage: %f",
+                stats.uploadTimePeak, stats.uploadPercentagePeak);
+    Log::Warning(Event::General,
+                 "Overall stats: %u frames taking > 16.7 ms, %u of them corrected with background orchestration",
+                stats.failedFrames, stats.framesSavedWithBackgroundOrchestration);
     assert(gfx::BackendScope::exists());
 
     if (contextLost) {
@@ -83,6 +111,7 @@ void Renderer::Impl::setObserver(RendererObserver* observer_) {
 }
 
 void Renderer::Impl::render(const UpdateParameters& updateParameters) {
+    auto frame_start = Clock::now();
     const bool isMapModeContinuous = updateParameters.mode == MapMode::Continuous;
     if (!isMapModeContinuous) {
         // Reset zoom history state.
@@ -291,12 +320,6 @@ void Renderer::Impl::render(const UpdateParameters& updateParameters) {
         return;
     }
 
-    if (renderState == RenderState::Never) {
-        observer->onWillStartRenderingMap();
-    }
-
-    observer->onWillStartRenderingFrame();
-
     TransformParameters transformParams(updateParameters.transformState);
 
     // Update all matrices and generate data that we should upload to the GPU.
@@ -355,6 +378,12 @@ void Renderer::Impl::render(const UpdateParameters& updateParameters) {
         }
     }
 
+    auto render_start = Clock::now();
+    if (renderState == RenderState::Never) {
+        observer->onWillStartRenderingMap();
+    }
+    observer->onWillStartRenderingFrame();
+
     auto& context = backend.getContext();
 
     // Blocks execution until the renderable is available.
@@ -373,7 +402,7 @@ void Renderer::Impl::render(const UpdateParameters& updateParameters) {
     };
 
     parameters.symbolFadeChange = placement->symbolFadeChange(updateParameters.timePoint);
-
+    auto upload_start = Clock::now();
     // - UPLOAD PASS -------------------------------------------------------------------------------
     // Uploads all required buffers and images before we do any actual rendering.
     {
@@ -402,6 +431,7 @@ void Renderer::Impl::render(const UpdateParameters& updateParameters) {
         lineAtlas->upload(*uploadPass);
         patternAtlas->upload(*uploadPass);
     }
+    auto upload_end = Clock::now();
 
     // - 3D PASS -------------------------------------------------------------------------------------
     // Renders any 3D layers bottom-to-top to unique FBOs with texture attachments, but share the same
@@ -533,6 +563,47 @@ void Renderer::Impl::render(const UpdateParameters& updateParameters) {
         // Notify observer about unused images when map is fully loaded
         // and there are no ongoing transitions.
         imageManager->reduceMemoryUseIfCacheSizeExceedsLimit();
+    }
+
+    auto frame_end = Clock::now();
+    std::chrono::duration<double, std::milli> frameDuration = frame_end - frame_start;
+    std::chrono::duration<double, std::milli> orchDuration = render_start - frame_start;
+    std::chrono::duration<double, std::milli> renderDuration = frame_end - render_start;
+    std::chrono::duration<double, std::milli> uploadDuration = upload_end - upload_start;
+    std::chrono::duration<double, std::milli> dispatchLatency = frame_start - updateParameters.timePoint;
+
+    stats.totalTime += frameDuration.count();
+    stats.orchestrationTime += orchDuration.count();
+
+    double orchestrationPercentage = orchDuration.count() / frameDuration.count() * 100.0;
+    double uploadPercentage = uploadDuration.count() / frameDuration.count() * 100.0;
+
+    if (stats.orchestrationTimePeak < orchDuration.count()) {
+        stats.orchestrationTimePeak = orchDuration.count();
+    }
+    if (stats.orchestrationPercentagePeak < orchestrationPercentage) {
+        stats.orchestrationPercentagePeak = orchestrationPercentage;
+    }
+    if (stats.uploadTimePeak < uploadDuration.count()) {
+        stats.uploadTimePeak = uploadDuration.count();
+    }
+    if (stats.uploadPercentagePeak < uploadPercentage) {
+        stats.uploadPercentagePeak = uploadPercentage;
+    }
+
+    constexpr double kMaxFrameDuration = 16.7; // 60 fps
+    if (frameDuration.count() > kMaxFrameDuration) {
+        stats.failedFrames++;
+        Log::Warning(Event::General,
+            "Failed frame stats: total: %f ms, orchestration %f ms, rendering %f ms, upload %f ms, dispatch latency %f ms",
+            frameDuration.count(),
+            orchDuration.count(),
+            renderDuration.count(),
+            uploadDuration.count(),
+            dispatchLatency.count());
+        if (frameDuration.count() - orchDuration.count() <= kMaxFrameDuration) {
+            stats.framesSavedWithBackgroundOrchestration++;
+        }
     }
 }
 
