@@ -769,7 +769,6 @@
         "mbgl/util/rect.hpp": "src/mbgl/util/rect.hpp",
         "mbgl/util/std.hpp": "src/mbgl/util/std.hpp",
         "mbgl/util/stopwatch.hpp": "src/mbgl/util/stopwatch.hpp",
-        "mbgl/util/thread_local.hpp": "src/mbgl/util/thread_local.hpp",
         "mbgl/util/thread_pool.hpp": "src/mbgl/util/thread_pool.hpp",
         "mbgl/util/tile_coordinate.hpp": "src/mbgl/util/tile_coordinate.hpp",
         "mbgl/util/tile_cover.hpp": "src/mbgl/util/tile_cover.hpp",

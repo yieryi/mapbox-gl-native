@@ -1,16 +1,11 @@
 #include <mbgl/gfx/backend_scope.hpp>
 #include <mbgl/gfx/renderer_backend.hpp>
-#include <mbgl/util/thread_local.hpp>
 
 #include <cassert>
 
 namespace {
 
-mbgl::util::ThreadLocal<mbgl::gfx::BackendScope>& currentScope() {
-    static mbgl::util::ThreadLocal<mbgl::gfx::BackendScope> backendScope;
-
-    return backendScope;
-}
+thread_local mbgl::gfx::BackendScope* g_backendScope;
 
 } // namespace
 
@@ -18,7 +13,7 @@ namespace mbgl {
 namespace gfx {
 
 BackendScope::BackendScope(RendererBackend& backend_, ScopeType scopeType_)
-    : priorScope(currentScope().get()),
+    : priorScope(g_backendScope),
       nextScope(nullptr),
       backend(backend_),
       scopeType(scopeType_) {
@@ -30,7 +25,7 @@ BackendScope::BackendScope(RendererBackend& backend_, ScopeType scopeType_)
 
     activate();
 
-    currentScope().set(this);
+    g_backendScope = this;
 }
 
 BackendScope::~BackendScope() {
@@ -39,11 +34,11 @@ BackendScope::~BackendScope() {
 
     if (priorScope) {
         priorScope->activate();
-        currentScope().set(priorScope);
+        g_backendScope = priorScope;
         assert(priorScope->nextScope == this);
         priorScope->nextScope = nullptr;
     } else {
-        currentScope().set(nullptr);
+        g_backendScope = nullptr;
     }
 }
 
@@ -69,7 +64,7 @@ void BackendScope::deactivate() {
 }
 
 bool BackendScope::exists() {
-    return currentScope().get();
+    return g_backendScope;
 }
 
 } // namespace gfx

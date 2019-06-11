@@ -20,7 +20,6 @@ set(MBGL_QT_CORE_FILES
     PRIVATE platform/qt/src/headless_backend_qt.cpp
 
     # Thread
-    PRIVATE platform/qt/src/thread_local.cpp
 
     # Platform integration
     PRIVATE platform/qt/src/async_task.cpp
