@@ -3,7 +3,11 @@
 
 namespace mbgl {
 
+namespace {
+
 thread_local Scheduler* g_currentScheduler;
+
+}
 
 void Scheduler::SetCurrent(Scheduler* scheduler) {
     g_currentScheduler = scheduler;
