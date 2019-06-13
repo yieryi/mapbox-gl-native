@@ -103,3 +103,6 @@
 [submodule "vendor/cppcodec"]
 	path = vendor/cppcodec
 	url = https://github.com/tplgy/cppcodec.git
+[submodule "vendor/filesystem"]
+	path = vendor/filesystem
+	url = https://github.com/gulrak/filesystem.git
