@@ -222,18 +222,25 @@ private:
 
 DefaultFileSource::DefaultFileSource(const std::string& cachePath,
                                      const std::string& assetPath,
-                                     uint64_t maximumCacheSize)
-    : DefaultFileSource(cachePath, std::make_unique<AssetFileSource>(assetPath), maximumCacheSize) {
+                                     uint64_t maximumCacheSize,
+                                     bool supportCacheOnlyRequests_)
+    : DefaultFileSource(cachePath, std::make_unique<AssetFileSource>(assetPath), maximumCacheSize, supportCacheOnlyRequests_) {
 }
 
 DefaultFileSource::DefaultFileSource(const std::string& cachePath,
                                      std::unique_ptr<FileSource>&& assetFileSource_,
-                                     uint64_t maximumCacheSize)
+                                     uint64_t maximumCacheSize,
+                                     bool supportCacheOnlyRequests_)
         : assetFileSource(std::move(assetFileSource_))
-        , impl(std::make_unique<util::Thread<Impl>>("DefaultFileSource", assetFileSource, cachePath, maximumCacheSize)) {
+        , impl(std::make_unique<util::Thread<Impl>>("DefaultFileSource", assetFileSource, cachePath, maximumCacheSize))
+        , supportCacheOnlyRequests(supportCacheOnlyRequests_) {
 }
 
 DefaultFileSource::~DefaultFileSource() = default;
+
+bool DefaultFileSource::supportsCacheOnlyRequests() const {
+    return supportCacheOnlyRequests;
+}
 
 void DefaultFileSource::setAPIBaseURL(const std::string& baseURL) {
     impl->actor().invoke(&Impl::setAPIBaseURL, baseURL);

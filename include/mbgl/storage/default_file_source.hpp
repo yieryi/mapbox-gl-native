@@ -32,15 +32,15 @@ public:
      */
     DefaultFileSource(const std::string& cachePath,
                       const std::string& assetPath,
-                      uint64_t maximumCacheSize = util::DEFAULT_MAX_CACHE_SIZE);
+                      uint64_t maximumCacheSize = util::DEFAULT_MAX_CACHE_SIZE,
+                      bool supportCacheOnlyRequests = true);
     DefaultFileSource(const std::string& cachePath,
                       std::unique_ptr<FileSource>&& assetFileSource,
-                      uint64_t maximumCacheSize = util::DEFAULT_MAX_CACHE_SIZE);
+                      uint64_t maximumCacheSize = util::DEFAULT_MAX_CACHE_SIZE,
+                      bool supportCacheOnlyRequests = true);
     ~DefaultFileSource() override;
 
-    bool supportsCacheOnlyRequests() const override {
-        return true;
-    }
+    bool supportsCacheOnlyRequests() const override;
 
     void setAPIBaseURL(const std::string&);
     std::string getAPIBaseURL();
@@ -229,6 +229,8 @@ private:
 
     std::mutex cachedAccessTokenMutex;
     std::string cachedAccessToken;
+
+    const bool supportCacheOnlyRequests;
 };
 
 } // namespace mbgl
