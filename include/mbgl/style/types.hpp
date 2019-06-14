@@ -115,6 +115,11 @@ enum class IconTextFitType : uint8_t {
     Height
 };
 
+enum class TextPlacementModeType : uint8_t {
+    Horizontal,
+    Vertical
+};
+
 enum class LightAnchorType: bool {
     Map,
     Viewport

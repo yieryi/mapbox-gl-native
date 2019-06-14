@@ -162,6 +162,10 @@ public:
     const PropertyValue<AlignmentType>& getTextPitchAlignment() const;
     void setTextPitchAlignment(const PropertyValue<AlignmentType>&);
 
+    static PropertyValue<std::vector<TextPlacementModeType>> getDefaultTextPlacementMode();
+    const PropertyValue<std::vector<TextPlacementModeType>>& getTextPlacementMode() const;
+    void setTextPlacementMode(const PropertyValue<std::vector<TextPlacementModeType>>&);
+
     static PropertyValue<float> getDefaultTextRadialOffset();
     const PropertyValue<float>& getTextRadialOffset() const;
     void setTextRadialOffset(const PropertyValue<float>&);

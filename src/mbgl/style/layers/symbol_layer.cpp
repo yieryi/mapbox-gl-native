@@ -605,6 +605,22 @@ void SymbolLayer::setTextPitchAlignment(const PropertyValue<AlignmentType>& valu
     baseImpl = std::move(impl_);
     observer->onLayerChanged(*this);
 }
+PropertyValue<std::vector<TextPlacementModeType>> SymbolLayer::getDefaultTextPlacementMode() {
+    return TextPlacementMode::defaultValue();
+}
+
+const PropertyValue<std::vector<TextPlacementModeType>>& SymbolLayer::getTextPlacementMode() const {
+    return impl().layout.get<TextPlacementMode>();
+}
+
+void SymbolLayer::setTextPlacementMode(const PropertyValue<std::vector<TextPlacementModeType>>& value) {
+    if (value == getTextPlacementMode())
+        return;
+    auto impl_ = mutableImpl();
+    impl_->layout.get<TextPlacementMode>() = value;
+    baseImpl = std::move(impl_);
+    observer->onLayerChanged(*this);
+}
 PropertyValue<float> SymbolLayer::getDefaultTextRadialOffset() {
     return TextRadialOffset::defaultValue();
 }
@@ -1381,6 +1397,7 @@ optional<Error> SymbolLayer::setLayoutProperty(const std::string& name, const Co
         TextOptional,
         TextPadding,
         TextPitchAlignment,
+        TextPlacementMode,
         TextRadialOffset,
         TextRotate,
         TextRotationAlignment,
@@ -1423,6 +1440,7 @@ optional<Error> SymbolLayer::setLayoutProperty(const std::string& name, const Co
         { "text-optional", static_cast<uint8_t>(Property::TextOptional) },
         { "text-padding", static_cast<uint8_t>(Property::TextPadding) },
         { "text-pitch-alignment", static_cast<uint8_t>(Property::TextPitchAlignment) },
+        { "text-placement-mode", static_cast<uint8_t>(Property::TextPlacementMode) },
         { "text-radial-offset", static_cast<uint8_t>(Property::TextRadialOffset) },
         { "text-rotate", static_cast<uint8_t>(Property::TextRotate) },
         { "text-rotation-alignment", static_cast<uint8_t>(Property::TextRotationAlignment) },
@@ -1735,6 +1753,18 @@ optional<Error> SymbolLayer::setLayoutProperty(const std::string& name, const Co
         }
         
         setTextJustify(*typedValue);
+        return nullopt;
+        
+    }
+    
+    if (property == Property::TextPlacementMode) {
+        Error error;
+        optional<PropertyValue<std::vector<TextPlacementModeType>>> typedValue = convert<PropertyValue<std::vector<TextPlacementModeType>>>(value, error, false, false);
+        if (!typedValue) {
+            return error;
+        }
+        
+        setTextPlacementMode(*typedValue);
         return nullopt;
         
     }

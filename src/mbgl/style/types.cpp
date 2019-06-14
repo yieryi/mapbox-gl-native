@@ -96,6 +96,11 @@ MBGL_DEFINE_ENUM(TextTransformType, {
     { TextTransformType::Lowercase, "lowercase" },
 });
 
+MBGL_DEFINE_ENUM(TextPlacementModeType, {
+    { TextPlacementModeType::Horizontal, "horizontal" },
+    { TextPlacementModeType::Vertical, "vertical" }
+});
+
 MBGL_DEFINE_ENUM(AlignmentType, {
     { AlignmentType::Map, "map" },
     { AlignmentType::Viewport, "viewport" },

@@ -184,6 +184,11 @@ struct TextPitchAlignment : LayoutProperty<AlignmentType> {
     static AlignmentType defaultValue() { return AlignmentType::Auto; }
 };
 
+struct TextPlacementMode : LayoutProperty<std::vector<TextPlacementModeType>> {
+    static constexpr const char *name() { return "text-placement-mode"; }
+    static std::vector<TextPlacementModeType> defaultValue() { return {  }; }
+};
+
 struct TextRadialOffset : DataDrivenLayoutProperty<float> {
     static constexpr const char *name() { return "text-radial-offset"; }
     static float defaultValue() { return 0; }
@@ -308,6 +313,7 @@ class SymbolLayoutProperties : public Properties<
     TextOptional,
     TextPadding,
     TextPitchAlignment,
+    TextPlacementMode,
     TextRadialOffset,
     TextRotate,
     TextRotationAlignment,

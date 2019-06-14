@@ -374,6 +374,9 @@ template struct ValueConverter<HillshadeIlluminationAnchorType>;
 template type::Type valueTypeToExpressionType<LightAnchorType>();
 template struct ValueConverter<LightAnchorType>;
 
+template type::Type valueTypeToExpressionType<std::vector<TextPlacementModeType>>();
+template struct ValueConverter<std::vector<TextPlacementModeType>>;
+
 } // namespace expression
 } // namespace style
 } // namespace mbgl
