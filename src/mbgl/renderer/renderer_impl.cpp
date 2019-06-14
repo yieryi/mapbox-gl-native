@@ -235,13 +235,20 @@ void Renderer::Impl::render(const UpdateParameters& updateParameters) {
 
     // Update all sources and initialize renderItems.
     staticData->has3D = false;
+
+    // Reserve size for filteredLayersForSource if there are sources.
+    std::vector<Immutable<LayerProperties>> filteredLayersForSource;
+    std::size_t maxRenderedLayersPerSource = 0ull;
+    if (!sourceImpls->empty()) {
+        const std::size_t reservedSize = prevFrameRenderedLayersCount == 0ull ?
+                                         layerImpls->size() : prevFrameRenderedLayersCount;
+        filteredLayersForSource.reserve(reservedSize);
+    }
+
     for (const auto& sourceImpl : *sourceImpls) {
         RenderSource* source = renderSources.at(sourceImpl->id).get();
-        std::vector<Immutable<LayerProperties>> filteredLayersForSource;
-        filteredLayersForSource.reserve(layerImpls->size());
         bool sourceNeedsRendering = false;
         bool sourceNeedsRelayout = false;       
-        
         uint32_t index = 0u;
         const auto begin = layerImpls->begin();
         const auto end = layerImpls->end();
@@ -284,7 +291,13 @@ void Renderer::Impl::render(const UpdateParameters& updateParameters) {
                        sourceNeedsRendering,
                        sourceNeedsRelayout,
                        tileParameters);
+
+        maxRenderedLayersPerSource = std::max(maxRenderedLayersPerSource, filteredLayersForSource.size());
+        filteredLayersForSource.clear();
     }
+
+    // Update value indicating how many layers were rendered on this frame.
+    prevFrameRenderedLayersCount = maxRenderedLayersPerSource;
 
     const bool loaded = updateParameters.styleLoaded && isLoaded();
     if (!isMapModeContinuous && !loaded) {

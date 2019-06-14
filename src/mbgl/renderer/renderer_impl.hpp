@@ -132,6 +132,9 @@ private:
     std::unique_ptr<Placement> placement;
 
     bool contextLost = false;
+
+    // Number of rendered layers from the previous frame.
+    std::size_t prevFrameRenderedLayersCount = 0ull;
 };
 
 } // namespace mbgl
