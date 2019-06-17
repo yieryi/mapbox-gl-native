@@ -53,6 +53,10 @@ int main(int argc, char *argv[]) {
         exit(2);
     }
 
+    if (backendValue) {
+        mbgl::gfx::Backend::SetType(args::get(backendValue));
+    }
+
     std::string style = styleValue ? args::get(styleValue) : mbgl::util::default_styles::streets.url;
     const double lat = latValue ? args::get(latValue) : 0;
     const double lon = lonValue ? args::get(lonValue) : 0;

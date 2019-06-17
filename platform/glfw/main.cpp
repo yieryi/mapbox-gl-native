@@ -92,6 +92,10 @@ int main(int argc, char *argv[]) {
         mbgl::Log::Info(mbgl::Event::General, "BENCHMARK MODE: Some optimizations are disabled.");
     }
 
+    if (backendValue) {
+        mbgl::gfx::Backend::SetType(args::get(backendValue));
+    }
+
     GLFWView backend(fullscreen, benchmark);
     view = &backend;
 

@@ -21,6 +21,10 @@ int runTests(int argc, char *argv[]) {
 
     argumentParser.ParseCLI(argc, argv);
 
+    if (backendValue) {
+        mbgl::gfx::Backend::SetType(args::get(backendValue));
+    }
+
     return RUN_ALL_TESTS();
 }
 
