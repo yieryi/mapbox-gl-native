@@ -70,7 +70,7 @@ public:
             std::unordered_map<std::string, std::vector<Feature>>& result,
             const GeometryCoordinates& queryGeometry,
             const TransformState&,
-            const std::vector<const RenderLayer*>&,
+            const std::unordered_map<std::string, const RenderLayer*>&,
             const RenderedQueryOptions& options,
             const mat4& projMatrix);
 
@@ -78,7 +78,7 @@ public:
             std::vector<Feature>& result,
             const SourceQueryOptions&);
 
-    virtual float getQueryPadding(const std::vector<const RenderLayer*>&);
+    virtual float getQueryPadding(const std::unordered_map<std::string, const RenderLayer*>&);
 
     void setTriedCache();
 
