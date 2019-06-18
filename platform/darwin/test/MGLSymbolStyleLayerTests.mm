@@ -1810,6 +1810,50 @@
         XCTAssertThrowsSpecificNamed(layer.textPitchAlignment = functionExpression, NSException, NSInvalidArgumentException, @"MGLSymbolLayer should raise an exception if a camera-data expression is applied to a property that does not support key paths to feature attributes.");
     }
 
+    // text-placement-mode
+    {
+        XCTAssertTrue(rawLayer->getTextPlacementMode().isUndefined(),
+                      @"text-placement-mode should be unset initially.");
+        NSExpression *defaultExpression = layer.textPlacementMode;
+
+        NSExpression *constantExpression = [NSExpression expressionWithFormat:@"{'horizontal','vertical'}"];
+        layer.textPlacementMode = constantExpression;
+        mbgl::style::PropertyValue<std::vector<mbgl::style::TextPlacementModeType>> propertyValue = { { mbgl::style::TextPlacementModeType::Horizontal, mbgl::style::TextPlacementModeType::Vertical } };
+        XCTAssertEqual(rawLayer->getTextPlacementMode(), propertyValue,
+                       @"Setting textPlacementMode to a constant value expression should update text-placement-mode.");
+        XCTAssertEqualObjects(layer.textPlacementMode, constantExpression,
+                              @"textPlacementMode should round-trip constant value expressions.");
+
+        constantExpression = [NSExpression expressionWithFormat:@"{'horizontal','vertical'}"];
+        NSExpression *functionExpression = [NSExpression expressionWithFormat:@"mgl_step:from:stops:($zoomLevel, %@, %@)", constantExpression, @{@18: constantExpression}];
+        layer.textPlacementMode = functionExpression;
+
+        {
+            using namespace mbgl::style::expression::dsl;
+            propertyValue = mbgl::style::PropertyExpression<std::vector<mbgl::style::TextPlacementModeType>>(
+                step(zoom(), literal({"horizontal", "vertical"}), 18.0, literal({"horizontal", "vertical"}))
+            );
+        }
+
+        XCTAssertEqual(rawLayer->getTextPlacementMode(), propertyValue,
+                       @"Setting textPlacementMode to a camera expression should update text-placement-mode.");
+        XCTAssertEqualObjects(layer.textPlacementMode, functionExpression,
+                              @"textPlacementMode should round-trip camera expressions.");
+
+
+        layer.textPlacementMode = nil;
+        XCTAssertTrue(rawLayer->getTextPlacementMode().isUndefined(),
+                      @"Unsetting textPlacementMode should return text-placement-mode to the default value.");
+        XCTAssertEqualObjects(layer.textPlacementMode, defaultExpression,
+                              @"textPlacementMode should return the default value after being unset.");
+
+        functionExpression = [NSExpression expressionForKeyPath:@"bogus"];
+        XCTAssertThrowsSpecificNamed(layer.textPlacementMode = functionExpression, NSException, NSInvalidArgumentException, @"MGLSymbolLayer should raise an exception if a camera-data expression is applied to a property that does not support key paths to feature attributes.");
+        functionExpression = [NSExpression expressionWithFormat:@"mgl_step:from:stops:(bogus, %@, %@)", constantExpression, @{@18: constantExpression}];
+        functionExpression = [NSExpression expressionWithFormat:@"mgl_interpolate:withCurveType:parameters:stops:($zoomLevel, 'linear', nil, %@)", @{@10: functionExpression}];
+        XCTAssertThrowsSpecificNamed(layer.textPlacementMode = functionExpression, NSException, NSInvalidArgumentException, @"MGLSymbolLayer should raise an exception if a camera-data expression is applied to a property that does not support key paths to feature attributes.");
+    }
+
     // text-radial-offset
     {
         XCTAssertTrue(rawLayer->getTextRadialOffset().isUndefined(),
@@ -2038,7 +2082,7 @@
 
         NSExpression *constantExpression = [NSExpression expressionWithFormat:@"{'top','bottom'}"];
         layer.textVariableAnchor = constantExpression;
-        mbgl::style::PropertyValue<std::vector<mbgl::style::SymbolAnchorType>> propertyValue = { { mbgl::style::SymbolAnchorType::Top, mbgl::style::SymbolAnchorType::Bottom } };
+        mbgl::style::PropertyValue<std::vector<mbgl::style::TextVariableAnchorType>> propertyValue = { { mbgl::style::TextVariableAnchorType::Top, mbgl::style::TextVariableAnchorType::Bottom } };
         XCTAssertEqual(rawLayer->getTextVariableAnchor(), propertyValue,
                        @"Setting textVariableAnchor to a constant value expression should update text-variable-anchor.");
         XCTAssertEqualObjects(layer.textVariableAnchor, constantExpression,
@@ -2050,7 +2094,7 @@
 
         {
             using namespace mbgl::style::expression::dsl;
-            propertyValue = mbgl::style::PropertyExpression<std::vector<mbgl::style::SymbolAnchorType>>(
+            propertyValue = mbgl::style::PropertyExpression<std::vector<mbgl::style::TextVariableAnchorType>>(
                 step(zoom(), literal({"top", "bottom"}), 18.0, literal({"top", "bottom"}))
             );
         }
@@ -3079,6 +3123,7 @@
     [self testPropertyName:@"is-text-optional" isBoolean:YES];
     [self testPropertyName:@"text-padding" isBoolean:NO];
     [self testPropertyName:@"text-pitch-alignment" isBoolean:NO];
+    [self testPropertyName:@"text-placement-mode" isBoolean:NO];
     [self testPropertyName:@"text-radial-offset" isBoolean:NO];
     [self testPropertyName:@"text-rotation" isBoolean:NO];
     [self testPropertyName:@"text-rotation-alignment" isBoolean:NO];

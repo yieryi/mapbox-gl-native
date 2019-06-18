@@ -84,6 +84,11 @@ namespace mbgl {
         { MGLTextPitchAlignmentAuto, "auto" },
     });
 
+    MBGL_DEFINE_ENUM(MGLTextPlacementMode, {
+        { MGLTextPlacementModeHorizontal, "horizontal" },
+        { MGLTextPlacementModeVertical, "vertical" },
+    });
+
     MBGL_DEFINE_ENUM(MGLTextRotationAlignment, {
         { MGLTextRotationAlignmentMap, "map" },
         { MGLTextRotationAlignmentViewport, "viewport" },
@@ -94,6 +99,18 @@ namespace mbgl {
         { MGLTextTransformNone, "none" },
         { MGLTextTransformUppercase, "uppercase" },
         { MGLTextTransformLowercase, "lowercase" },
+    });
+
+    MBGL_DEFINE_ENUM(MGLTextVariableAnchor, {
+        { MGLTextVariableAnchorCenter, "center" },
+        { MGLTextVariableAnchorLeft, "left" },
+        { MGLTextVariableAnchorRight, "right" },
+        { MGLTextVariableAnchorTop, "top" },
+        { MGLTextVariableAnchorBottom, "bottom" },
+        { MGLTextVariableAnchorTopLeft, "top-left" },
+        { MGLTextVariableAnchorTopRight, "top-right" },
+        { MGLTextVariableAnchorBottomLeft, "bottom-left" },
+        { MGLTextVariableAnchorBottomRight, "bottom-right" },
     });
 
     MBGL_DEFINE_ENUM(MGLIconTranslationAnchor, {
@@ -926,6 +943,24 @@ namespace mbgl {
     return MGLStyleValueTransformer<mbgl::style::AlignmentType, NSValue *, mbgl::style::AlignmentType, MGLTextPitchAlignment>().toExpression(propertyValue);
 }
 
+- (void)setTextPlacementMode:(NSExpression *)textPlacementMode {
+    MGLAssertStyleLayerIsValid();
+    MGLLogDebug(@"Setting textPlacementMode: %@", textPlacementMode);
+
+    auto mbglValue = MGLStyleValueTransformer<std::vector<mbgl::style::TextPlacementModeType>, NSArray<NSValue *> *, mbgl::style::TextPlacementModeType, MGLTextPlacementMode>().toPropertyValue<mbgl::style::PropertyValue<std::vector<mbgl::style::TextPlacementModeType>>>(textPlacementMode, false);
+    self.rawLayer->setTextPlacementMode(mbglValue);
+}
+
+- (NSExpression *)textPlacementMode {
+    MGLAssertStyleLayerIsValid();
+
+    auto propertyValue = self.rawLayer->getTextPlacementMode();
+    if (propertyValue.isUndefined()) {
+        propertyValue = self.rawLayer->getDefaultTextPlacementMode();
+    }
+    return MGLStyleValueTransformer<std::vector<mbgl::style::TextPlacementModeType>, NSArray<NSValue *> *, mbgl::style::TextPlacementModeType, MGLTextPlacementMode>().toExpression(propertyValue);
+}
+
 - (void)setTextRadialOffset:(NSExpression *)textRadialOffset {
     MGLAssertStyleLayerIsValid();
     MGLLogDebug(@"Setting textRadialOffset: %@", textRadialOffset);
@@ -1009,7 +1044,7 @@ namespace mbgl {
     MGLAssertStyleLayerIsValid();
     MGLLogDebug(@"Setting textVariableAnchor: %@", textVariableAnchor);
 
-    auto mbglValue = MGLStyleValueTransformer<std::vector<mbgl::style::SymbolAnchorType>, NSArray<NSValue *> *, mbgl::style::SymbolAnchorType, MGLTextAnchor>().toPropertyValue<mbgl::style::PropertyValue<std::vector<mbgl::style::SymbolAnchorType>>>(textVariableAnchor, false);
+    auto mbglValue = MGLStyleValueTransformer<std::vector<mbgl::style::TextVariableAnchorType>, NSArray<NSValue *> *, mbgl::style::TextVariableAnchorType, MGLTextVariableAnchor>().toPropertyValue<mbgl::style::PropertyValue<std::vector<mbgl::style::TextVariableAnchorType>>>(textVariableAnchor, false);
     self.rawLayer->setTextVariableAnchor(mbglValue);
 }
 
@@ -1020,7 +1055,7 @@ namespace mbgl {
     if (propertyValue.isUndefined()) {
         propertyValue = self.rawLayer->getDefaultTextVariableAnchor();
     }
-    return MGLStyleValueTransformer<std::vector<mbgl::style::SymbolAnchorType>, NSArray<NSValue *> *, mbgl::style::SymbolAnchorType, MGLTextAnchor>().toExpression(propertyValue);
+    return MGLStyleValueTransformer<std::vector<mbgl::style::TextVariableAnchorType>, NSArray<NSValue *> *, mbgl::style::TextVariableAnchorType, MGLTextVariableAnchor>().toExpression(propertyValue);
 }
 
 #pragma mark - Accessing the Paint Attributes

@@ -74,6 +74,13 @@ global.camelizeWithLeadingLowercase = function (str) {
     });
 };
 
+global.definesEnum = function(property) {
+    if (property.type == "enum" || (property.type == "array" && property.value == "enum")) {
+        return true;
+    }
+    return false;
+}
+
 global.objCName = function (property) {
     return camelizeWithLeadingLowercase(property.name);
 };
@@ -139,6 +146,8 @@ global.objCTestValue = function (property, layerType, arraysAsStructs, indent) {
                 }
                 case 'anchor':
                     return `@"{'top','bottom'}"`;
+                case 'mode':
+                    return `@"{'horizontal','vertical'}"`;
                 default:
                     throw new Error(`unknown array type for ${property.name}`);
             }
@@ -188,7 +197,9 @@ global.mbglTestValue = function (property, layerType) {
                 case 'translate':
                     return '{ 1, 1 }';
                 case 'anchor':
-                    return '{ mbgl::style::SymbolAnchorType::Top, mbgl::style::SymbolAnchorType::Bottom }';
+                    return '{ mbgl::style::TextVariableAnchorType::Top, mbgl::style::TextVariableAnchorType::Bottom }';
+                case 'mode':
+                    return '{ mbgl::style::TextPlacementModeType::Horizontal, mbgl::style::TextPlacementModeType::Vertical }';
                 default:
                     throw new Error(`unknown array type for ${property.name}`);
             }
@@ -208,6 +219,8 @@ global.mbglExpressionTestValue = function (property, layerType) {
             switch (arrayType(property)) {
                 case 'anchor':
                     return `{"top", "bottom"}`;
+                case 'mode':
+                    return `{"horizontal", "vertical"}`;
                 default:
                     break;
             }
@@ -433,7 +446,9 @@ global.describeType = function (property) {
                 case 'position':
                     return '`MGLSphericalPosition`';
                 case 'anchor':
-                    return '`MGLTextAnchor` array';
+                    return '`MGLTextVariableAnchor` array';
+                case 'mode':
+                    return '`MGLTextPlacementMode` array';
                 default:
                     return 'array';
             }
@@ -563,6 +578,7 @@ global.propertyType = function (property) {
                 case 'translate':
                     return 'NSValue *';
                 case 'anchor':
+                case 'mode':
                     return 'NSArray<NSValue *> *';
                 default:
                     throw new Error(`unknown array type for ${property.name}`);
@@ -609,7 +625,9 @@ global.valueTransformerArguments = function (property) {
                 case 'translate':
                     return ['std::array<float, 2>', objCType];
                 case 'anchor':
-                    return ['std::vector<mbgl::style::SymbolAnchorType>', objCType, 'mbgl::style::SymbolAnchorType', 'MGLTextAnchor'];
+                    return ['std::vector<mbgl::style::TextVariableAnchorType>', objCType, 'mbgl::style::TextVariableAnchorType', 'MGLTextVariableAnchor'];
+                case 'mode':
+                    return ['std::vector<mbgl::style::TextPlacementModeType>', objCType, 'mbgl::style::TextPlacementModeType', 'MGLTextPlacementMode'];
                 default:
                     throw new Error(`unknown array type for ${property.name}`);
             }
@@ -660,7 +678,9 @@ global.mbglType = function(property) {
                 case 'position':
                     return 'mbgl::style::Position';
                 case 'anchor':
-                    return 'std::vector<mbgl::style::SymbolAnchorType>';
+                    return 'std::vector<mbgl::style::TextVariableAnchorType>';
+                case 'mode':
+                    return 'std::vector<mbgl::style::TextPlacementModeType>';
                 default:
                     throw new Error(`unknown array type for ${property.name}`);
             }
