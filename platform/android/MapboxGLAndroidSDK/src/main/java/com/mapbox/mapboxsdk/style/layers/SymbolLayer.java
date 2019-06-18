@@ -530,6 +530,18 @@ public class SymbolLayer extends Layer {
   }
 
   /**
+   * Get the TextPlacementMode property
+   *
+   * @return property wrapper value around String[]
+   */
+  @NonNull
+  @SuppressWarnings("unchecked")
+  public PropertyValue<String[]> getTextPlacementMode() {
+    checkThread();
+    return (PropertyValue<String[]>) new PropertyValue("text-placement-mode", nativeGetTextPlacementMode());
+  }
+
+  /**
    * Get the TextRotate property
    *
    * @return property wrapper value around Float
@@ -1240,6 +1252,10 @@ public class SymbolLayer extends Layer {
   @NonNull
   @Keep
   private native Object nativeGetTextMaxAngle();
+
+  @NonNull
+  @Keep
+  private native Object nativeGetTextPlacementMode();
 
   @NonNull
   @Keep

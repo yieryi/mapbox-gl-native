@@ -2376,6 +2376,26 @@ public class PropertyFactory {
   }
 
   /**
+   * Hint for an orientation of a symbol with point placement. Symbols whose language does not support provided hint, will be laid out in their natural orientation. The order of elements in an array define priority order for the placement.
+   *
+   * @param value a String[] value
+   * @return property wrapper around String[]
+   */
+  public static PropertyValue<String[]> textPlacementMode(String[] value) {
+    return new LayoutPropertyValue<>("text-placement-mode", value);
+  }
+
+  /**
+   * Hint for an orientation of a symbol with point placement. Symbols whose language does not support provided hint, will be laid out in their natural orientation. The order of elements in an array define priority order for the placement.
+   *
+   * @param value a String[] value
+   * @return property wrapper around String[]
+   */
+  public static PropertyValue<Expression> textPlacementMode(Expression value) {
+    return new LayoutPropertyValue<>("text-placement-mode", value);
+  }
+
+  /**
    * Rotates the text clockwise.
    *
    * @param value a Float value

@@ -670,6 +670,19 @@ public class SymbolLayerTest extends BaseLayerTest {
 
   @Test
   @UiThreadTest
+  public void testTextPlacementModeAsConstant() {
+    Timber.i("text-placement-mode");
+    assertNotNull(layer);
+    assertNull(layer.getTextPlacementMode().getValue());
+
+    // Set and Get
+    String[] propertyValue = new String[0];
+    layer.setProperties(textPlacementMode(propertyValue));
+    assertEquals(layer.getTextPlacementMode().getValue(), propertyValue);
+  }
+
+  @Test
+  @UiThreadTest
   public void testTextRotateAsConstant() {
     Timber.i("text-rotate");
     assertNotNull(layer);
