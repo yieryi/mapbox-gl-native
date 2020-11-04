@@ -17,8 +17,56 @@ namespace mbgl {
 
 using namespace style;
 
+ImageSourceRenderData::~ImageSourceRenderData() = default;
+
+void ImageSourceRenderData::upload(gfx::UploadPass& uploadPass) const {
+    if (bucket && bucket->needsUpload()) {
+        bucket->upload(uploadPass);
+    }
+
+    if (!debugTexture) {
+        std::array<uint8_t, 4> data{{0, 0, 0, 0}};
+        static const PremultipliedImage emptyImage{Size(1, 1), data.data(), data.size()};
+        debugTexture = uploadPass.createTexture(emptyImage);
+    }
+}
+
+void ImageSourceRenderData::render(PaintParameters& parameters) const {
+    if (!bucket || !(parameters.debugOptions & MapDebugOptions::TileBorders)) {
+        return;
+    }
+    assert(debugTexture);
+    static const style::Properties<>::PossiblyEvaluated properties {};
+    static const DebugProgram::Binders paintAttributeData(properties, 0);
+
+    auto& programInstance = parameters.programs.debug;
+
+    for (auto matrix : matrices) {
+        programInstance.draw(parameters.context,
+                             *parameters.renderPass,
+                             gfx::LineStrip{4.0f * parameters.pixelRatio},
+                             gfx::DepthMode::disabled(),
+                             gfx::StencilMode::disabled(),
+                             gfx::ColorMode::unblended(),
+                             gfx::CullFaceMode::disabled(),
+                             *parameters.staticData.tileBorderIndexBuffer,
+                             RenderStaticData::tileBorderSegments(),
+                             DebugProgram::computeAllUniformValues(
+                                 DebugProgram::LayoutUniformValues{uniforms::matrix::Value(matrix),
+                                                                   uniforms::color::Value(Color::red()),
+                                                                   uniforms::overlay_scale::Value(1.0f)},
+                                 paintAttributeData,
+                                 properties,
+                                 parameters.state.getZoom()),
+                             DebugProgram::computeAllAttributeBindings(
+                                 *parameters.staticData.tileVertexBuffer, paintAttributeData, properties),
+                             DebugProgram::TextureBindings{textures::image::Value{debugTexture->getResource()}},
+                             "image");
+    }
+}
+
 RenderImageSource::RenderImageSource(Immutable<style::ImageSource::Impl> impl_)
-    : RenderSource(impl_) {
+    : RenderSource(std::move(impl_)) {
 }
 
 RenderImageSource::~RenderImageSource() = default;
@@ -28,75 +76,36 @@ const style::ImageSource::Impl& RenderImageSource::impl() const {
 }
 
 bool RenderImageSource::isLoaded() const {
-    return !!sharedData.bucket;
+    return !!bucket;
 }
 
-void RenderImageSource::upload(gfx::UploadPass& uploadPass) {
-    if (sharedData.bucket->needsUpload()) {
-        sharedData.bucket->upload(uploadPass);
-    }
+std::unique_ptr<RenderItem> RenderImageSource::createRenderItem() {
+    assert(renderData);
+    return std::move(renderData);
 }
 
 void RenderImageSource::prepare(const SourcePrepareParameters& parameters) {
+    assert(!renderData);
     if (!isLoaded()) {
+        renderData = std::make_unique<ImageSourceRenderData>(bucket, std::vector<mat4>{}, baseImpl->id);
         return;
     }
 
-    sharedData.matrices = std::make_shared<std::vector<mat4>>(tileIds.size(), mat4());
+    std::vector<mat4> matrices{tileIds.size(), mat4()};
     const auto& transformParams = parameters.transform;
     for (size_t i = 0u; i < tileIds.size(); ++i) {
-        mat4& matrix = (*sharedData.matrices)[i];
+        mat4& matrix = matrices[i];
         matrix::identity(matrix);
         transformParams.state.matrixFor(matrix, tileIds[i]);
         matrix::multiply(matrix, transformParams.alignedProjMatrix, matrix);
     }
-}
-
-void RenderImageSource::finishRender(PaintParameters& parameters) {
-    if (!isLoaded() || !(parameters.debugOptions & MapDebugOptions::TileBorders)) {
-        return;
-    }
-
-    static const style::Properties<>::PossiblyEvaluated properties {};
-    static const DebugProgram::Binders paintAttributeData(properties, 0);
-
-    auto& programInstance = parameters.programs.debug;
-
-    for (auto matrix : *sharedData.matrices) {
-        programInstance.draw(
-            parameters.context,
-            *parameters.renderPass,
-            gfx::LineStrip { 4.0f * parameters.pixelRatio },
-            gfx::DepthMode::disabled(),
-            gfx::StencilMode::disabled(),
-            gfx::ColorMode::unblended(),
-            gfx::CullFaceMode::disabled(),
-            *parameters.staticData.tileBorderIndexBuffer,
-            parameters.staticData.tileBorderSegments,
-            programInstance.computeAllUniformValues(
-                DebugProgram::LayoutUniformValues {
-                    uniforms::matrix::Value( matrix ),
-                    uniforms::color::Value( Color::red() )
-                },
-                paintAttributeData,
-                properties,
-                parameters.state.getZoom()
-            ),
-            programInstance.computeAllAttributeBindings(
-                *parameters.staticData.tileVertexBuffer,
-                paintAttributeData,
-                properties
-            ),
-            DebugProgram::TextureBindings{},
-            "image"
-        );
-    }
+    renderData = std::make_unique<ImageSourceRenderData>(bucket, std::move(matrices), baseImpl->id);
 }
 
 std::unordered_map<std::string, std::vector<Feature>>
 RenderImageSource::queryRenderedFeatures(const ScreenLineString&,
                                          const TransformState&,
-                                         const std::vector<const RenderLayer*>&,
+                                         const std::unordered_map<std::string, const RenderLayer*>&,
                                          const RenderedQueryOptions&,
                                          const mat4&) const {
     return std::unordered_map<std::string, std::vector<Feature>> {};
@@ -193,29 +202,29 @@ void RenderImageSource::update(Immutable<style::Source::Impl> baseImpl_,
         auto gc = TileCoordinate::toGeometryCoordinate(tileIds[0], tileCoords);
         geomCoords.push_back(gc);
     }
-    if (!sharedData.bucket) {
-        sharedData.bucket = std::make_unique<RasterBucket>(image);
+    if (!bucket) {
+        bucket = std::make_shared<RasterBucket>(image);
     } else {
-        sharedData.bucket->clear();
-        if (image != sharedData.bucket->image) {
-            sharedData.bucket->setImage(image);
+        bucket->clear();
+        if (image != bucket->image) {
+            bucket->setImage(image);
         }
     }
 
     // Set Bucket Vertices, Indices, and segments
-    sharedData.bucket->vertices.emplace_back(
+    bucket->vertices.emplace_back(
         RasterProgram::layoutVertex({ geomCoords[0].x, geomCoords[0].y }, { 0, 0 }));
-    sharedData.bucket->vertices.emplace_back(
+    bucket->vertices.emplace_back(
         RasterProgram::layoutVertex({ geomCoords[1].x, geomCoords[1].y }, { util::EXTENT, 0 }));
-    sharedData.bucket->vertices.emplace_back(
+    bucket->vertices.emplace_back(
         RasterProgram::layoutVertex({ geomCoords[3].x, geomCoords[3].y }, { 0, util::EXTENT }));
-    sharedData.bucket->vertices.emplace_back(
+    bucket->vertices.emplace_back(
         RasterProgram::layoutVertex({ geomCoords[2].x, geomCoords[2].y }, { util::EXTENT, util::EXTENT }));
 
-    sharedData.bucket->indices.emplace_back(0, 1, 2);
-    sharedData.bucket->indices.emplace_back(1, 2, 3);
+    bucket->indices.emplace_back(0, 1, 2);
+    bucket->indices.emplace_back(1, 2, 3);
 
-    sharedData.bucket->segments.emplace_back(0, 0, 4, 6);
+    bucket->segments.emplace_back(0, 0, 4, 6);
 }
 
 void RenderImageSource::dumpDebugLogs() const {

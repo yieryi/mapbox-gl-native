@@ -33,9 +33,7 @@ namespace {
 class LocalGlyphRasterizerTest {
 public:
     LocalGlyphRasterizerTest(const optional<std::string> fontFamily)
-        : frontend(1, optional<std::string>(), gfx::ContextMode::Unique, fontFamily)
-    {
-    }
+        : frontend(1, gfx::HeadlessBackend::SwapBehaviour::NoFlush, gfx::ContextMode::Unique, fontFamily) {}
 
     util::RunLoop loop;
     std::shared_ptr<StubFileSource> fileSource = std::make_shared<StubFileSource>();
@@ -43,9 +41,11 @@ public:
     MapAdapter map { frontend, MapObserver::nullObserver(), fileSource,
                   MapOptions().withMapMode(MapMode::Static).withSize(frontend.getSize())};
 
-    void checkRendering(const char * name, double imageMatchPixelsThreshold = 0.05, double pixelMatchThreshold = 0.1) {
+    void checkRendering(const char * name, double imageMatchPixelsThreshold = 0.015, double pixelMatchThreshold = 0.1) {
         test::checkImage(std::string("test/fixtures/local_glyphs/") + name,
-                         frontend.render(map), imageMatchPixelsThreshold, pixelMatchThreshold);
+                         frontend.render(map).image,
+                         imageMatchPixelsThreshold,
+                         pixelMatchThreshold);
     }
 };
 
@@ -55,7 +55,7 @@ public:
 #if defined(__APPLE__)
 
 TEST(LocalGlyphRasterizer, PingFang) {
-    LocalGlyphRasterizerTest test(std::string("PingFang"));
+    LocalGlyphRasterizerTest test(std::string("PingFang TC"));
 
     test.fileSource->glyphsResponse = [&] (const Resource& resource) {
         EXPECT_EQ(Resource::Kind::Glyphs, resource.kind);
@@ -64,14 +64,45 @@ TEST(LocalGlyphRasterizer, PingFang) {
         return response;
     };
     test.map.getStyle().loadJSON(util::read_file("test/fixtures/local_glyphs/mixed.json"));
-#if defined(__APPLE__)
-    test.checkRendering("ping_fang");
+#if defined(__APPLE__) && !defined(__QT__)
+    test.checkRendering("ping_fang", 0.0161);
 #elif defined(__QT__)
     test.checkRendering("ping_fang_qt");
 #endif // defined(__APPLE__)
 }
 
+#if !defined(__QT__)
+TEST(LocalGlyphRasterizer, PingFangSemibold) {
+    LocalGlyphRasterizerTest test(std::string("PingFang TC Semibold"));
+
+    test.fileSource->glyphsResponse = [&](const Resource& resource) {
+        EXPECT_EQ(Resource::Kind::Glyphs, resource.kind);
+        Response response;
+        response.data = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
+        return response;
+    };
+    test.map.getStyle().loadJSON(util::read_file("test/fixtures/local_glyphs/mixed.json"));
+    test.checkRendering("ping_fang_semibold", 0.0161);
+}
+#endif // !defined(__QT__)
+
 #endif // defined(__APPLE__)
+
+#if defined(__linux__) && defined(__QT__)
+TEST(LocalGlyphRasterizer, NotoSansCJK) {
+    LocalGlyphRasterizerTest test(std::string("Noto Sans CJK KR Regular"));
+
+    test.fileSource->glyphsResponse = [&] (const Resource& resource) {
+        EXPECT_EQ(Resource::Kind::Glyphs, resource.kind);
+        Response response;
+        response.data = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
+        return response;
+    };
+
+    test.map.getStyle().loadJSON(util::read_file("test/fixtures/local_glyphs/mixed.json"));
+    test.checkRendering("noto_sans_cjk_kr_regular_qt");
+}
+#endif // defined(__linux__) && defined(__QT__)
 
 TEST(LocalGlyphRasterizer, NoLocal) {
     // Expectation: without any local fonts set, and without any CJK glyphs provided,

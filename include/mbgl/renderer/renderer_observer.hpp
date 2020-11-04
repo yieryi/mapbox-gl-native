@@ -26,15 +26,15 @@ public:
     // Start of frame, initial is the first frame for this map
     virtual void onWillStartRenderingFrame() {}
 
-    // End of frame, boolean flags that a repaint is required
-    virtual void onDidFinishRenderingFrame(RenderMode, bool) {}
+    // End of frame, booleans flags that a repaint is required and that placement changed.
+    virtual void onDidFinishRenderingFrame(RenderMode, bool /*repaint*/, bool /*placementChanged*/) {}
 
     // Final frame
     virtual void onDidFinishRenderingMap() {}
 
     // Style is missing an image
     using StyleImageMissingCallback = std::function<void()>;
-    virtual void onStyleImageMissing(const std::string&, StyleImageMissingCallback done) { done(); }
+    virtual void onStyleImageMissing(const std::string&, const StyleImageMissingCallback& done) { done(); }
     virtual void onRemoveUnusedStyleImages(const std::vector<std::string>&) {}
 };
 

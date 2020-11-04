@@ -9,11 +9,14 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 struct ALooper;
 
 namespace mbgl {
 namespace util {
+
+using WatchCallback = std::function<void(int, RunLoop::Event)>;
 
 template <typename T> class Thread;
 class Alarm;
@@ -41,6 +44,9 @@ public:
     ALooper* loop = nullptr;
     RunLoop* runLoop = nullptr;
     std::atomic<bool> running;
+    std::atomic_flag coalesce = ATOMIC_FLAG_INIT;
+
+    std::unordered_map<int, WatchCallback> readPoll;
 
 private:
     friend RunLoop;

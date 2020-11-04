@@ -39,20 +39,25 @@ bool TilePyramid::isLoaded() const {
     return true;
 }
 
-Tile* TilePyramid::getTile(const OverscaledTileID& tileID){
+Tile* TilePyramid::getTile(const OverscaledTileID& tileID) {
     auto it = tiles.find(tileID);
     return it == tiles.end() ? cache.get(tileID) : it->second.get();
+}
+
+const Tile* TilePyramid::getRenderedTile(const UnwrappedTileID& tileID) const {
+    auto it = renderedTiles.find(tileID);
+    return it != renderedTiles.end() ? &it->second.get() : nullptr;
 }
 
 void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& layers,
                          const bool needsRendering,
                          const bool needsRelayout,
                          const TileParameters& parameters,
-                         const SourceType type,
+                         const style::Source::Impl& sourceImpl,
                          const uint16_t tileSize,
                          const Range<uint8_t> zoomRange,
                          optional<LatLngBounds> bounds,
-                         std::function<std::unique_ptr<Tile> (const OverscaledTileID&)> createTile) {
+                         std::function<std::unique_ptr<Tile>(const OverscaledTileID&)> createTile) {
     // If we need a relayout, abandon any cached tiles; they're now stale.
     if (needsRelayout) {
         cache.clear();
@@ -63,25 +68,35 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
     if (!needsRendering) {
         if (!needsRelayout) {
             for (auto& entry : tiles) {
+                // These tiles are invisible, we set optional necessity
+                // for them and thus suppress network requests on
+                // tiles expiration (see `OnlineFileRequest`).
+                entry.second->setNecessity(TileNecessity::Optional);
                 cache.add(entry.first, std::move(entry.second));
             }
         }
 
         tiles.clear();
-        renderTiles.clear();
+        renderedTiles.clear();
 
         return;
     }
 
     handleWrapJump(parameters.transformState.getLatLng().longitude());
 
+    const auto type = sourceImpl.type;
     // Determine the overzooming/underzooming amounts and required tiles.
     int32_t overscaledZoom = util::coveringZoomLevel(parameters.transformState.getZoom(), type, tileSize);
     int32_t tileZoom = overscaledZoom;
     int32_t panZoom = zoomRange.max;
 
-    std::vector<UnwrappedTileID> idealTiles;
-    std::vector<UnwrappedTileID> panTiles;
+    const optional<uint8_t>& sourcePrefetchZoomDelta = sourceImpl.getPrefetchZoomDelta();
+    const optional<uint8_t>& maxParentTileOverscaleFactor = sourceImpl.getMaxOverscaleFactorForParentTiles();
+    const Duration minimumUpdateInterval = sourceImpl.getMinimumTileUpdateInterval();
+    const bool isVolatile = sourceImpl.isVolatile();
+
+    std::vector<OverscaledTileID> idealTiles;
+    std::vector<OverscaledTileID> panTiles;
 
     if (overscaledZoom >= zoomRange.min) {
         int32_t idealZoom = std::min<int32_t>(zoomRange.max, overscaledZoom);
@@ -96,8 +111,10 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
         if (parameters.mode == MapMode::Continuous && type != style::SourceType::GeoJSON && type != style::SourceType::Annotations) {
             // Request lower zoom level tiles (if configured to do so) in an attempt
             // to show something on the screen faster at the cost of a little of bandwidth.
-            if (parameters.prefetchZoomDelta) {
-                panZoom = std::max<int32_t>(tileZoom - parameters.prefetchZoomDelta, zoomRange.min);
+            const uint8_t prefetchZoomDelta =
+                sourcePrefetchZoomDelta ? *sourcePrefetchZoomDelta : parameters.prefetchZoomDelta;
+            if (prefetchZoomDelta) {
+                panZoom = std::max<int32_t>(tileZoom - prefetchZoomDelta, zoomRange.min);
             }
 
             if (panZoom < idealZoom) {
@@ -105,7 +122,15 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
             }
         }
 
-        idealTiles = util::tileCover(parameters.transformState, idealZoom);
+        idealTiles = util::tileCover(parameters.transformState, idealZoom, tileZoom);
+        if (parameters.mode == MapMode::Tile && type != SourceType::Raster && type != SourceType::RasterDEM &&
+            idealTiles.size() > 1) {
+            mbgl::Log::Warning(mbgl::Event::General,
+                               "Provided camera options returned %zu tiles, only %s is taken in Tile mode.",
+                               idealTiles.size(),
+                               util::toString(idealTiles[0]).c_str());
+            idealTiles = {idealTiles[0]};
+        }
     }
 
     // Stores a list of all the tiles that we're definitely going to retain. There are two
@@ -116,6 +141,7 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
 
     auto retainTileFn = [&](Tile& tile, TileNecessity necessity) -> void {
         if (retain.emplace(tile.id).second) {
+            tile.setUpdateParameters({minimumUpdateInterval, isVolatile});
             tile.setNecessity(necessity);
         }
 
@@ -133,7 +159,8 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
     // tiles are used from the cache, but not created.
     optional<util::TileRange> tileRange = {};
     if (bounds) {
-        tileRange = util::TileRange::fromLatLngBounds(*bounds, zoomRange.min, std::min(tileZoom, (int32_t)zoomRange.max));
+        tileRange = util::TileRange::fromLatLngBounds(
+            *bounds, zoomRange.min, std::min(tileZoom, static_cast<int32_t>(zoomRange.max)));
     }
     auto createTileFn = [&](const OverscaledTileID& tileID) -> Tile* {
         if (tileRange && !tileRange->contains(tileID.canonical)) {
@@ -142,18 +169,15 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
         std::unique_ptr<Tile> tile = cache.pop(tileID);
         if (!tile) {
             tile = createTile(tileID);
-            if (tile) {
-                tile->setObserver(observer);
-                tile->setLayers(layers);
-            }
+            if (!tile) return nullptr;
         }
-        if (!tile) {
-            return nullptr;
-        }
+
+        tile->setObserver(observer);
+        tile->setLayers(layers);
         return tiles.emplace(tileID, std::move(tile)).first->second.get();
     };
 
-    auto previouslyRenderedTiles = std::move(renderTiles);
+    auto previouslyRenderedTiles = std::move(renderedTiles);
 
     auto renderTileFn = [&](const UnwrappedTileID& tileID, Tile& tile) {
         addRenderTile(tileID, tile);
@@ -161,16 +185,22 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
         tile.markRenderedIdeal();
     };
 
-    renderTiles.clear();
+    renderedTiles.clear();
 
     if (!panTiles.empty()) {
-        algorithm::updateRenderables(getTileFn, createTileFn, retainTileFn,
-                [](const UnwrappedTileID&, Tile&) {}, panTiles, zoomRange, panZoom);
+        algorithm::updateRenderables(
+            getTileFn,
+            createTileFn,
+            retainTileFn,
+            [](const UnwrappedTileID&, Tile&) {},
+            panTiles,
+            zoomRange,
+            maxParentTileOverscaleFactor);
     }
 
-    algorithm::updateRenderables(getTileFn, createTileFn, retainTileFn, renderTileFn,
-                                 idealTiles, zoomRange, tileZoom);
-    
+    algorithm::updateRenderables(
+        getTileFn, createTileFn, retainTileFn, renderTileFn, idealTiles, zoomRange, maxParentTileOverscaleFactor);
+
     for (auto previouslyRenderedTile : previouslyRenderedTiles) {
         Tile& tile = previouslyRenderedTile.second;
         tile.markRenderedPreviously();
@@ -184,10 +214,9 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
 
     if (type != SourceType::Annotations) {
         size_t conservativeCacheSize =
-            std::max((float)parameters.transformState.getSize().width / tileSize, 1.0f) *
-            std::max((float)parameters.transformState.getSize().height / tileSize, 1.0f) *
-            (parameters.transformState.getMaxZoom() - parameters.transformState.getMinZoom() + 1) *
-            0.5;
+            std::max(static_cast<float>(parameters.transformState.getSize().width) / tileSize, 1.0f) *
+            std::max(static_cast<float>(parameters.transformState.getSize().height) / tileSize, 1.0f) *
+            (parameters.transformState.getMaxZoom() - parameters.transformState.getMinZoom() + 1) * 0.5;
         cache.setSize(conservativeCacheSize);
     }
 
@@ -216,27 +245,19 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
         pair.second->setShowCollisionBoxes(parameters.debugOptions & MapDebugOptions::Collision);
     }
 
-    fadingTiles = false;
-
     // Initialize renderable tiles and update the contained layer render data.
-    for (auto& entry : renderTiles) {
+    for (auto& entry : renderedTiles) {
         Tile& tile = entry.second;
         assert(tile.isRenderable());
         tile.usedByRenderedLayers = false;
 
         const bool holdForFade = tile.holdForFade();
-        fadingTiles = (fadingTiles || holdForFade);
         for (const auto& layerProperties : layers) {
             const auto* typeInfo = layerProperties->baseImpl->getTypeInfo();
             if (holdForFade && typeInfo->fadingTiles == LayerTypeInfo::FadingTiles::NotRequired) {
                 continue;
             }
-            // Update layer properties for complete tiles; for incomplete just check the presence.
-            bool layerRenderableInTile = tile.isComplete() ? tile.updateLayerProperties(layerProperties)
-                                                           : static_cast<bool>(tile.getBucket(*layerProperties->baseImpl));
-            if (layerRenderableInTile) {
-                tile.usedByRenderedLayers = true;
-            }
+            tile.usedByRenderedLayers |= tile.layerPropertiesUpdated(layerProperties);
         }
     }
 }
@@ -260,7 +281,7 @@ void TilePyramid::handleWrapJump(float lng) {
 
     const float lngDifference = lng - prevLng;
     const float worldDifference = lngDifference / 360;
-    const int wrapDelta = ::round(worldDifference);
+    const int wrapDelta = std::round(worldDifference);
     prevLng = lng;
 
     if (wrapDelta) {
@@ -273,26 +294,25 @@ void TilePyramid::handleWrapJump(float lng) {
         }
         tiles = std::move(newTiles);
 
-        for (auto& tile : renderTiles) {
+        for (auto& tile : renderedTiles) {
             UnwrappedTileID newID = tile.first.unwrapTo(tile.first.wrap + wrapDelta);
             newRenderTiles.emplace(newID, tile.second);
         }
-        renderTiles = std::move(newRenderTiles);
+        renderedTiles = std::move(newRenderTiles);
     }
 }
 
-
-std::unordered_map<std::string, std::vector<Feature>> TilePyramid::queryRenderedFeatures(const ScreenLineString& geometry,
-                                           const TransformState& transformState,
-                                           const std::vector<const RenderLayer*>& layers,
-                                           const RenderedQueryOptions& options,
-                                           const mat4& projMatrix) const {
+std::unordered_map<std::string, std::vector<Feature>> TilePyramid::queryRenderedFeatures(
+    const ScreenLineString& geometry, const TransformState& transformState,
+    const std::unordered_map<std::string, const RenderLayer*>& layers, const RenderedQueryOptions& options,
+    const mat4& projMatrix, const SourceFeatureState& featureState) const {
     std::unordered_map<std::string, std::vector<Feature>> result;
-    if (renderTiles.empty() || geometry.empty()) {
+    if (renderedTiles.empty() || geometry.empty()) {
         return result;
     }
 
     LineString<double> queryGeometry;
+    queryGeometry.reserve(geometry.size());
 
     for (const auto& p : geometry) {
         queryGeometry.push_back(TileCoordinate::fromScreenCoordinate(
@@ -306,7 +326,7 @@ std::unordered_map<std::string, std::vector<Feature>> TilePyramid::queryRendered
             std::tie(b.canonical.z, b.canonical.y, b.wrap, b.canonical.x);
     };
 
-    std::map<UnwrappedTileID, std::reference_wrapper<Tile>, decltype(cmp)> sortedTiles{renderTiles.begin(), renderTiles.end(), cmp};
+    std::map<UnwrappedTileID, std::reference_wrapper<Tile>, decltype(cmp)> sortedTiles{renderedTiles.begin(), renderedTiles.end(), cmp};
 
     auto maxPitchScaleFactor = transformState.maxPitchScaleFactor();
 
@@ -333,12 +353,8 @@ std::unordered_map<std::string, std::vector<Feature>> TilePyramid::queryRendered
             tileSpaceQueryGeometry.push_back(TileCoordinate::toGeometryCoordinate(id, c));
         }
 
-        tile.queryRenderedFeatures(result,
-                                   tileSpaceQueryGeometry,
-                                   transformState,
-                                   layers,
-                                   options,
-                                   projMatrix);
+        tile.queryRenderedFeatures(result, tileSpaceQueryGeometry, transformState, layers, options, projMatrix,
+                                   featureState);
     }
 
     return result;
@@ -373,20 +389,23 @@ void TilePyramid::dumpDebugLogs() const {
 }
 
 void TilePyramid::clearAll() {
+    fadingTiles = false;
     tiles.clear();
-    renderTiles.clear();
+    renderedTiles.clear();
     cache.clear();
 }
 
 void TilePyramid::addRenderTile(const UnwrappedTileID& tileID, Tile& tile) {
     assert(tile.isRenderable());
-    renderTiles.emplace(tileID, tile);
+    renderedTiles.emplace(tileID, tile);
 }
 
 void TilePyramid::updateFadingTiles() {
-    for (auto& entry : renderTiles) {
+    fadingTiles = false;
+    for (auto& entry : renderedTiles) {
         Tile& tile = entry.second;
         if (tile.holdForFade()) {
+            fadingTiles = true;
             tile.performedFadePlacement();
         }
     }

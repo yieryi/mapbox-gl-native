@@ -4,6 +4,7 @@
 #include <mbgl/renderer/buckets/debug_bucket.hpp>
 #include <mbgl/renderer/render_source.hpp>
 #include <mbgl/renderer/render_static_data.hpp>
+#include <mbgl/renderer/tile_render_data.hpp>
 #include <mbgl/programs/programs.hpp>
 #include <mbgl/map/transform_state.hpp>
 #include <mbgl/gfx/cull_face_mode.hpp>
@@ -15,8 +16,7 @@ namespace mbgl {
 
 using namespace style;
 
-RenderTile::RenderTile(UnwrappedTileID id_, Tile& tile_) : id(std::move(id_)), tile(tile_) {
-}
+RenderTile::RenderTile(UnwrappedTileID id_, Tile& tile_) : id(id_), tile(tile_) {}
 
 RenderTile::~RenderTile() = default;
 
@@ -65,41 +65,33 @@ const OverscaledTileID& RenderTile::getOverscaledTileID() const { return tile.id
 bool RenderTile::holdForFade() const { return tile.holdForFade(); }
 
 Bucket* RenderTile::getBucket(const style::Layer::Impl& impl) const {
-    return tile.getBucket(impl);
+    assert(renderData);
+    return renderData->getBucket(impl);
 }
 
 const LayerRenderData* RenderTile::getLayerRenderData(const style::Layer::Impl& impl) const {
-    return tile.getLayerRenderData(impl);
+    assert(renderData);
+    return renderData->getLayerRenderData(impl);
 }
 
 optional<ImagePosition> RenderTile::getPattern(const std::string& pattern) const {
-    assert(tile.kind == Tile::Kind::Geometry);
-    return static_cast<const GeometryTile&>(tile).getPattern(pattern);
+    assert(renderData);
+    return renderData->getPattern(pattern);
 }
 
 const gfx::Texture& RenderTile::getGlyphAtlasTexture() const {
-    assert(tile.kind == Tile::Kind::Geometry);
-    assert(static_cast<const GeometryTile&>(tile).glyphAtlasTexture);
-    return *(static_cast<const GeometryTile&>(tile).glyphAtlasTexture);
+    assert(renderData);
+    return renderData->getGlyphAtlasTexture();
 }
 
 const gfx::Texture& RenderTile::getIconAtlasTexture() const {
-    assert(tile.kind == Tile::Kind::Geometry);
-    assert(static_cast<const GeometryTile&>(tile).iconAtlasTexture);
-    return *(static_cast<const GeometryTile&>(tile).iconAtlasTexture);
+    assert(renderData);
+    return renderData->getIconAtlasTexture();
 }
 
-std::shared_ptr<FeatureIndex> RenderTile::getFeatureIndex() const {
-    assert(tile.kind == Tile::Kind::Geometry);
-    return static_cast<const GeometryTile&>(tile).getFeatureIndex();
-}
-
-void RenderTile::setMask(TileMask&& mask) {
-    tile.setMask(std::move(mask));
-}
-
-void RenderTile::upload(gfx::UploadPass& uploadPass) {
-    tile.upload(uploadPass);
+void RenderTile::upload(gfx::UploadPass& uploadPass) const {
+    assert(renderData);
+    renderData->upload(uploadPass);
 
     if (debugBucket) {
         debugBucket->upload(uploadPass);
@@ -107,6 +99,12 @@ void RenderTile::upload(gfx::UploadPass& uploadPass) {
 }
 
 void RenderTile::prepare(const SourcePrepareParameters& parameters) {
+    renderData = tile.createRenderData();
+    assert(renderData);
+    renderData->prepare(parameters);
+
+    needsRendering = tile.usedByRenderedLayers;
+
     if (parameters.debugOptions != MapDebugOptions::NoDebug &&
         (!debugBucket || debugBucket->renderable != tile.isRenderable() ||
          debugBucket->complete != tile.isComplete() ||
@@ -121,7 +119,7 @@ void RenderTile::prepare(const SourcePrepareParameters& parameters) {
     }
 
     // Calculate two matrices for this tile: matrix is the standard tile matrix; nearClippedMatrix
-    // clips the near plane to 100 to save depth buffer precision
+    // has near plane moved further, to enhance depth buffer precision
     const auto& transform = parameters.transform;
     transform.state.matrixFor(matrix, id);
     transform.state.matrixFor(nearClippedMatrix, id);
@@ -129,8 +127,8 @@ void RenderTile::prepare(const SourcePrepareParameters& parameters) {
     matrix::multiply(nearClippedMatrix, transform.nearClippedProjMatrix, nearClippedMatrix);
 }
 
-void RenderTile::finishRender(PaintParameters& parameters) {
-    if (!tile.usedByRenderedLayers || parameters.debugOptions == MapDebugOptions::NoDebug)
+void RenderTile::finishRender(PaintParameters& parameters) const {
+    if (!needsRendering || parameters.debugOptions == MapDebugOptions::NoDebug)
         return;
 
     static const style::Properties<>::PossiblyEvaluated properties {};
@@ -140,91 +138,81 @@ void RenderTile::finishRender(PaintParameters& parameters) {
 
     if (parameters.debugOptions & (MapDebugOptions::Timestamps | MapDebugOptions::ParseStatus)) {
         assert(debugBucket);
-        const auto allAttributeBindings = program.computeAllAttributeBindings(
-            *debugBucket->vertexBuffer,
-            paintAttributeData,
-            properties
-        );
+        const auto allAttributeBindings =
+            DebugProgram::computeAllAttributeBindings(*debugBucket->vertexBuffer, paintAttributeData, properties);
 
-        program.draw(
-            parameters.context,
-            *parameters.renderPass,
-            gfx::Lines { 4.0f * parameters.pixelRatio },
-            gfx::DepthMode::disabled(),
-            gfx::StencilMode::disabled(),
-            gfx::ColorMode::unblended(),
-            gfx::CullFaceMode::disabled(),
-            *debugBucket->indexBuffer,
-            debugBucket->segments,
-            program.computeAllUniformValues(
-                DebugProgram::LayoutUniformValues {
-                    uniforms::matrix::Value( matrix ),
-                    uniforms::color::Value( Color::white() )
-                },
-                paintAttributeData,
-                properties,
-                parameters.state.getZoom()
-            ),
-            allAttributeBindings,
-            DebugProgram::TextureBindings{},
-            "__debug/" + debugBucket->drawScopeID + "/text-outline"
-        );
+        program.draw(parameters.context,
+                     *parameters.renderPass,
+                     gfx::Lines{4.0f * parameters.pixelRatio},
+                     gfx::DepthMode::disabled(),
+                     gfx::StencilMode::disabled(),
+                     gfx::ColorMode::unblended(),
+                     gfx::CullFaceMode::disabled(),
+                     *debugBucket->indexBuffer,
+                     debugBucket->segments,
+                     DebugProgram::computeAllUniformValues(
+                         DebugProgram::LayoutUniformValues{uniforms::matrix::Value(matrix),
+                                                           uniforms::color::Value(Color::white()),
+                                                           uniforms::overlay_scale::Value(1.0f)},
+                         paintAttributeData,
+                         properties,
+                         parameters.state.getZoom()),
+                     allAttributeBindings,
+                     DebugProgram::TextureBindings{textures::image::Value{debugBucket->texture->getResource()}},
+                     "text-outline");
 
-        program.draw(
-            parameters.context,
-            *parameters.renderPass,
-            gfx::Lines { 2.0f * parameters.pixelRatio },
-            gfx::DepthMode::disabled(),
-            gfx::StencilMode::disabled(),
-            gfx::ColorMode::unblended(),
-            gfx::CullFaceMode::disabled(),
-            *debugBucket->indexBuffer,
-            debugBucket->segments,
-            program.computeAllUniformValues(
-                DebugProgram::LayoutUniformValues {
-                    uniforms::matrix::Value( matrix ),
-                    uniforms::color::Value( Color::black() )
-                },
-                paintAttributeData,
-                properties,
-                parameters.state.getZoom()
-            ),
-            allAttributeBindings,
-            DebugProgram::TextureBindings{},
-            "__debug/" + debugBucket->drawScopeID + "/text"
-        );
+        program.draw(parameters.context,
+                     *parameters.renderPass,
+                     gfx::Lines{2.0f * parameters.pixelRatio},
+                     gfx::DepthMode::disabled(),
+                     gfx::StencilMode::disabled(),
+                     gfx::ColorMode::unblended(),
+                     gfx::CullFaceMode::disabled(),
+                     *debugBucket->indexBuffer,
+                     debugBucket->segments,
+                     DebugProgram::computeAllUniformValues(
+                         DebugProgram::LayoutUniformValues{uniforms::matrix::Value(matrix),
+                                                           uniforms::color::Value(Color::black()),
+                                                           uniforms::overlay_scale::Value(1.0f)},
+                         paintAttributeData,
+                         properties,
+                         parameters.state.getZoom()),
+                     allAttributeBindings,
+                     DebugProgram::TextureBindings{textures::image::Value{debugBucket->texture->getResource()}},
+                     "text");
     }
 
     if (parameters.debugOptions & MapDebugOptions::TileBorders) {
         assert(debugBucket);
+        if (debugBucket->tileBorderSegments.empty()) {
+            debugBucket->tileBorderSegments = RenderStaticData::tileBorderSegments();
+        }
         parameters.programs.debug.draw(
             parameters.context,
             *parameters.renderPass,
-            gfx::LineStrip { 4.0f * parameters.pixelRatio },
+            gfx::LineStrip{4.0f * parameters.pixelRatio},
             gfx::DepthMode::disabled(),
             gfx::StencilMode::disabled(),
             gfx::ColorMode::unblended(),
             gfx::CullFaceMode::disabled(),
             *parameters.staticData.tileBorderIndexBuffer,
-            parameters.staticData.tileBorderSegments,
-            program.computeAllUniformValues(
-                DebugProgram::LayoutUniformValues {
-                    uniforms::matrix::Value( matrix ),
-                    uniforms::color::Value( Color::red() )
-                },
+            debugBucket->tileBorderSegments,
+            DebugProgram::computeAllUniformValues(
+                DebugProgram::LayoutUniformValues{uniforms::matrix::Value(matrix),
+                                                  uniforms::color::Value(Color::red()),
+                                                  uniforms::overlay_scale::Value(1.0f)},
                 paintAttributeData,
                 properties,
-                parameters.state.getZoom()
-            ),
-            program.computeAllAttributeBindings(
-                *parameters.staticData.tileVertexBuffer,
-                paintAttributeData,
-                properties
-            ),
-            DebugProgram::TextureBindings{},
-            "__debug/" + debugBucket->drawScopeID
-        );
+                parameters.state.getZoom()),
+            DebugProgram::computeAllAttributeBindings(
+                *parameters.staticData.tileVertexBuffer, paintAttributeData, properties),
+            DebugProgram::TextureBindings{textures::image::Value{debugBucket->texture->getResource()}},
+            "border");
     }
+}
+
+void RenderTile::setFeatureState(const LayerFeatureStates& states) {
+    tile.setFeatureState(states);
 }
 
 } // namespace mbgl

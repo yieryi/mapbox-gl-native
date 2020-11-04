@@ -1,6 +1,4 @@
 #include <mbgl/renderer/image_atlas.hpp>
-#include <mbgl/gfx/upload_pass.hpp>
-#include <mbgl/gfx/context.hpp>
 #include <mbgl/renderer/image_manager.hpp>
 
 #include <mapbox/shelf-pack.hpp>
@@ -11,14 +9,11 @@ static constexpr uint32_t padding = 1;
 
 ImagePosition::ImagePosition(const mapbox::Bin& bin, const style::Image::Impl& image, uint32_t version_)
     : pixelRatio(image.pixelRatio),
-      textureRect(
-        bin.x + padding,
-        bin.y + padding,
-        bin.w - padding * 2,
-        bin.h - padding * 2
-      ),
-      version(version_) {
-}
+      paddedRect(bin.x, bin.y, bin.w, bin.h),
+      version(version_),
+      stretchX(image.stretchX),
+      stretchY(image.stretchY),
+      content(image.content) {}
 
 const mapbox::Bin& _packImage(mapbox::ShelfPack& pack, const style::Image::Impl& image, ImageAtlas& resultImage, ImageType imageType) {
     const mapbox::Bin& bin = *pack.packOne(-1,
@@ -38,10 +33,10 @@ const mapbox::Bin& _packImage(mapbox::ShelfPack& pack, const style::Image::Impl&
                                 bin.y + padding
                              },
                              image.image.size);
-    uint32_t x = bin.x + padding,
-            y = bin.y + padding,
-            w = image.image.size.width,
-            h = image.image.size.height;
+    uint32_t x = bin.x + padding;
+    uint32_t y = bin.y + padding;
+    uint32_t w = image.image.size.width;
+    uint32_t h = image.image.size.height;
 
     if (imageType == ImageType::Pattern) {
             // Add 1 pixel wrapped padding on each side of the image.
@@ -53,27 +48,36 @@ const mapbox::Bin& _packImage(mapbox::ShelfPack& pack, const style::Image::Impl&
     return bin;
 }
 
-void ImageAtlas::patchUpdatedImages(gfx::UploadPass& uploadPass, gfx::Texture& atlasTexture, const ImageManager& imageManager) {
+namespace {
+
+void populateImagePatches(
+    ImagePositions& imagePositions, 
+    const ImageManager& imageManager,
+    std::vector<ImagePatch>& /*out*/ patches) {
     for (auto& updatedImageVersion : imageManager.updatedImageVersions) {
-        auto iconPosition = iconPositions.find(updatedImageVersion.first);
-        if (iconPosition != iconPositions.end()) {
-            patchUpdatedImage(uploadPass, atlasTexture, iconPosition->second, imageManager, updatedImageVersion.first, updatedImageVersion.second);
-        }
-        auto patternPosition = patternPositions.find(updatedImageVersion.first);
-        if (patternPosition != patternPositions.end()) {
-            patchUpdatedImage(uploadPass, atlasTexture, patternPosition->second, imageManager, updatedImageVersion.first, updatedImageVersion.second);
+        const std::string& name = updatedImageVersion.first;
+        const uint32_t version = updatedImageVersion.second;
+        auto it = imagePositions.find(updatedImageVersion.first);
+        if (it != imagePositions.end()) {
+            auto& position = it->second;
+            if (position.version == version) continue;
+
+            auto updatedImage = imageManager.getSharedImage(name);
+            if (updatedImage == nullptr) continue;
+
+            patches.emplace_back(*updatedImage, position.paddedRect);
+            position.version = version;
         }
     }
 }
 
-void ImageAtlas::patchUpdatedImage(gfx::UploadPass& uploadPass, gfx::Texture& atlasTexture, ImagePosition& position, const ImageManager& imageManager, const std::string& name, uint16_t version) {
-    if (position.version == version) return;
+} // namespace
 
-    auto updatedImage = imageManager.getImage(name);
-    if (updatedImage == nullptr) return;
-
-    uploadPass.updateTextureSub(atlasTexture, updatedImage->image, position.textureRect.x, position.textureRect.y);
-    position.version = version;
+std::vector<ImagePatch> ImageAtlas::getImagePatchesAndUpdateVersions(const ImageManager& imageManager) {
+    std::vector<ImagePatch> imagePatches;
+    populateImagePatches(iconPositions, imageManager, imagePatches);
+    populateImagePatches(patternPositions, imageManager, imagePatches);
+    return imagePatches;
 }
 
 ImageAtlas makeImageAtlas(const ImageMap& icons, const ImageMap& patterns, const std::unordered_map<std::string, uint32_t>& versionMap) {

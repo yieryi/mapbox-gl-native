@@ -26,7 +26,7 @@ struct StillImageRequest {
     Map::StillImageCallback callback;
 };
 
-class Map::Impl : public style::Observer, public RendererObserver {
+class Map::Impl final : public style::Observer, public RendererObserver {
 public:
     Impl(RendererFrontend&, MapObserver&, std::shared_ptr<FileSource>, const MapOptions&);
     ~Impl() final;
@@ -42,10 +42,10 @@ public:
     void onInvalidate() final;
     void onResourceError(std::exception_ptr) final;
     void onWillStartRenderingFrame() final;
-    void onDidFinishRenderingFrame(RenderMode, bool) final;
+    void onDidFinishRenderingFrame(RenderMode, bool, bool) final;
     void onWillStartRenderingMap() final;
     void onDidFinishRenderingMap() final;
-    void onStyleImageMissing(const std::string&, std::function<void()>) final;
+    void onStyleImageMissing(const std::string&, const std::function<void()>&) final;
     void onRemoveUnusedStyleImages(const std::vector<std::string>&) final;
 
     // Map

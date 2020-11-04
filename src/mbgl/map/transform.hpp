@@ -29,17 +29,21 @@ public:
 
     // Camera
     /** Returns the current camera options. */
-    CameraOptions getCameraOptions(const EdgeInsets&) const;
+    CameraOptions getCameraOptions(const optional<EdgeInsets>&) const;
 
     /** Instantaneously, synchronously applies the given camera options. */
     void jumpTo(const CameraOptions&);
     /** Asynchronously transitions all specified camera options linearly along
-        an optional time curve. */
+        an optional time curve. However, center coordinate is not transitioned
+        linearly as, instead, ground speed is kept linear.*/
     void easeTo(const CameraOptions&, const AnimationOptions& = {});
     /** Asynchronously zooms out, pans, and zooms back into the given camera
         along a great circle, as though the viewer is riding a supersonic
-        jetcopter. */
-    void flyTo(const CameraOptions&, const AnimationOptions& = {});
+        jetcopter.
+        Parameter linearZoomInterpolation: when true, there is no additional
+        zooming out as zoom is linearly interpolated from current to given
+        camera zoom. This is used for easeTo.*/
+    void flyTo(const CameraOptions&, const AnimationOptions& = {}, bool linearZoomInterpolation = false);
 
     // Position
 
@@ -54,6 +58,9 @@ public:
     void setLatLngBounds(LatLngBounds);
     void setMinZoom(double);
     void setMaxZoom(double);
+
+    void setMinPitch(double);
+    void setMaxPitch(double);
 
     // Zoom
 
@@ -106,14 +113,20 @@ public:
     ScreenCoordinate latLngToScreenCoordinate(const LatLng&) const;
     LatLng screenCoordinateToLatLng(const ScreenCoordinate&, LatLng::WrapMode = LatLng::Wrapped) const;
 
+    FreeCameraOptions getFreeCameraOptions() const;
+    void setFreeCameraOptions(const FreeCameraOptions& options);
+
 private:
     MapObserver& observer;
     TransformState state;
 
     void startTransition(const CameraOptions&,
                          const AnimationOptions&,
-                         std::function<void(double)>,
+                         const std::function<void(double)>&,
                          const Duration&);
+
+    // We don't want to show horizon: limit max pitch based on edge insets.
+    double getMaxPitchForEdgeInsets(const EdgeInsets &insets) const;
 
     TimePoint transitionStart;
     Duration transitionDuration;

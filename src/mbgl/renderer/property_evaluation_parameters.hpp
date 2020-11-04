@@ -17,16 +17,11 @@ public:
     explicit PropertyEvaluationParameters(float z_)
         : z(z_),
           now(Clock::time_point::max()),
-          zoomHistory(),
+
           defaultFadeDuration(0) {}
 
-    PropertyEvaluationParameters(ZoomHistory zoomHistory_,
-                          TimePoint now_,
-                          Duration defaultFadeDuration_)
-        : z(zoomHistory_.lastZoom),
-          now(std::move(now_)),
-          zoomHistory(std::move(zoomHistory_)),
-          defaultFadeDuration(std::move(defaultFadeDuration_)) {}
+    PropertyEvaluationParameters(ZoomHistory zoomHistory_, TimePoint now_, Duration defaultFadeDuration_)
+        : z(zoomHistory_.lastZoom), now(now_), zoomHistory(zoomHistory_), defaultFadeDuration(defaultFadeDuration_) {}
 
     CrossfadeParameters getCrossfadeParameters() const {
         const float fraction = z - std::floor(z);

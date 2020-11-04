@@ -112,7 +112,7 @@ struct ToValue {
     v8::Local<v8::Value> operator()(const std::vector<mbgl::Value>& array) {
         Nan::EscapableHandleScope scope;
         v8::Local<v8::Array> result = Nan::New<v8::Array>();
-        for (unsigned int i = 0; i < array.size(); i++) {
+        for (std::size_t i = 0; i < array.size(); i++) {
             result->Set(i, toJS(array[i]));
         }
         return scope.Escape(result);
@@ -166,6 +166,12 @@ v8::Local<v8::Object> toJS(const Feature& feature) {
     if (!feature.id.is<mbgl::NullValue>()) {
         Nan::Set(result, Nan::New("id").ToLocalChecked(), FeatureIdentifier::visit(feature.id, ToValue()));
     }
+
+    Nan::Set(result, Nan::New("source").ToLocalChecked(), toJS(feature.source));
+    if (!feature.sourceLayer.empty()) {
+        Nan::Set(result, Nan::New("sourceLayer").ToLocalChecked(), toJS(feature.sourceLayer));
+    }
+    Nan::Set(result, Nan::New("state").ToLocalChecked(), toJS(feature.state));
 
     return scope.Escape(result);
 }

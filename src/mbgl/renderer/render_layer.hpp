@@ -1,10 +1,11 @@
 #pragma once
+#include <list>
 #include <mbgl/layout/layout.hpp>
 #include <mbgl/renderer/render_pass.hpp>
+#include <mbgl/renderer/render_source.hpp>
 #include <mbgl/style/layer_properties.hpp>
 #include <mbgl/tile/geometry_tile_data.hpp>
 #include <mbgl/util/mat4.hpp>
-
 #include <memory>
 #include <string>
 
@@ -15,10 +16,12 @@ class TransitionParameters;
 class PropertyEvaluationParameters;
 class UploadParameters;
 class PaintParameters;
-class RenderSource;
 class RenderTile;
 class TransformState;
 class PatternAtlas;
+class LineAtlas;
+class SymbolBucket;
+class DynamicFeatureIndex;
 
 class LayerRenderData {
 public:
@@ -26,17 +29,31 @@ public:
     Immutable<style::LayerProperties> layerProperties;
 };
 
-class LayerPlacementData {
+class SortKeyRange {
+public:
+    bool isFirstRange() const { return start == 0u; }
+    float sortKey;
+    size_t start;
+    size_t end;
+};
+
+class BucketPlacementData {
 public:
     std::reference_wrapper<Bucket> bucket;
-    std::reference_wrapper<RenderTile> tile;
+    std::reference_wrapper<const RenderTile> tile;
+    std::shared_ptr<FeatureIndex> featureIndex;
+    std::string sourceId;
+    optional<SortKeyRange> sortKeyRange;
 };
+
+using LayerPlacementData = std::list<BucketPlacementData>;
 
 class LayerPrepareParameters {
 public:
     RenderSource* source;
     ImageManager& imageManager;
     PatternAtlas& patternAtlas;
+    LineAtlas& lineAtlas;
     const TransformState& state;
 };
 
@@ -63,6 +80,9 @@ public:
     // Returns true if the layer has a pattern property and is actively crossfading.
     virtual bool hasCrossfade() const = 0;
 
+    // Returns true if layer writes to depth buffer by drawing using PaintParameters::depthModeFor3D().
+    virtual bool is3D() const { return false; }
+
     // Returns true is the layer is subject to placement.
     bool needsPlacement() const;
 
@@ -77,24 +97,21 @@ public:
     // Checks whether the given zoom is inside this layer zoom range.
     bool supportsZoom(float zoom) const;
 
-    virtual void upload(gfx::UploadPass&, UploadParameters&) {}
+    virtual void upload(gfx::UploadPass&) {}
     virtual void render(PaintParameters&) = 0;
 
     // Check wether the given geometry intersects
     // with the feature
-    virtual bool queryIntersectsFeature(
-            const GeometryCoordinates&,
-            const GeometryTileFeature&,
-            const float,
-            const TransformState&,
-            const float,
-            const mat4&) const { return false; };
+    virtual bool queryIntersectsFeature(const GeometryCoordinates&, const GeometryTileFeature&, const float,
+                                        const TransformState&, const float, const mat4&, const FeatureState&) const {
+        return false;
+    };
+
+    virtual void populateDynamicRenderFeatureIndex(DynamicFeatureIndex&) const {}
 
     virtual void prepare(const LayerPrepareParameters&);
 
-    const std::vector<LayerPlacementData>& getPlacementData() const { 
-        return placementData; 
-    }
+    const LayerPlacementData& getPlacementData() const { return placementData; }
 
     // Latest evaluated properties.
     Immutable<style::LayerProperties> evaluatedProperties;
@@ -111,8 +128,11 @@ protected:
     // in the console to inform the developer.
     void checkRenderability(const PaintParameters&, uint32_t activeBindingCount);
 
+    void addRenderPassesFromTiles();
+
+    const LayerRenderData* getRenderDataForPass(const RenderTile&, RenderPass) const;
+
 protected:
-    using RenderTiles = std::vector<std::reference_wrapper<RenderTile>>;
     // Stores current set of tiles to be rendered for this layer.
     RenderTiles renderTiles;
 
@@ -120,14 +140,15 @@ protected:
     // evaluated StyleProperties object and is updated accordingly.
     RenderPass passes = RenderPass::None;
 
-    std::vector<LayerPlacementData> placementData;
+    LayerPlacementData placementData;
 
 private:
-    RenderTiles filterRenderTiles(RenderTiles) const;
     // Some layers may not render correctly on some hardware when the vertex attribute limit of
     // that GPU is exceeded. More attributes are used when adding many data driven paint properties
     // to a layer.
     bool hasRenderFailures = false;
 };
+
+using RenderLayerReferences = std::vector<std::reference_wrapper<RenderLayer>>;
 
 } // namespace mbgl

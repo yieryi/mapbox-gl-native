@@ -2,6 +2,7 @@
 
 #include <mbgl/map/map.hpp>
 #include <mbgl/storage/file_source.hpp>
+#include <mbgl/util/async_request.hpp>
 #include <mbgl/util/image.hpp>
 
 #include <exception>
@@ -30,7 +31,7 @@ public:
     class RenderWorker;
 
     NodeMap(v8::Local<v8::Object>);
-    ~NodeMap();
+    ~NodeMap() override;
 
     static Nan::Persistent<v8::Function> constructor;
     static Nan::Persistent<v8::Object> parseError;
@@ -50,8 +51,7 @@ public:
     static void AddImage(const Nan::FunctionCallbackInfo<v8::Value>&);
     static void RemoveImage(const Nan::FunctionCallbackInfo<v8::Value>&);
     static void SetLayerZoomRange(const Nan::FunctionCallbackInfo<v8::Value>&);
-    static void SetLayoutProperty(const Nan::FunctionCallbackInfo<v8::Value>&);
-    static void SetPaintProperty(const Nan::FunctionCallbackInfo<v8::Value>&);
+    static void SetLayerProperty(const Nan::FunctionCallbackInfo<v8::Value>&);
     static void SetFilter(const Nan::FunctionCallbackInfo<v8::Value>&);
     static void SetCenter(const Nan::FunctionCallbackInfo<v8::Value>&);
     static void SetZoom(const Nan::FunctionCallbackInfo<v8::Value>&);
@@ -64,9 +64,13 @@ public:
     static void DumpDebugLogs(const Nan::FunctionCallbackInfo<v8::Value>&);
     static void QueryRenderedFeatures(const Nan::FunctionCallbackInfo<v8::Value>&);
 
+    static void SetFeatureState(const Nan::FunctionCallbackInfo<v8::Value>&);
+    static void GetFeatureState(const Nan::FunctionCallbackInfo<v8::Value>&);
+    static void RemoveFeatureState(const Nan::FunctionCallbackInfo<v8::Value>&);
+
     static v8::Local<v8::Value> ParseError(const char* msg);
 
-    void startRender(RenderOptions options);
+    void startRender(const RenderOptions& options);
     void renderFinished();
 
     void release();
@@ -93,7 +97,9 @@ public:
 
 struct NodeFileSource : public mbgl::FileSource {
     NodeFileSource(NodeMap* nodeMap_) : nodeMap(nodeMap_) {}
+    ~NodeFileSource() override = default;
     std::unique_ptr<mbgl::AsyncRequest> request(const mbgl::Resource&, mbgl::FileSource::Callback) final;
+    bool canRequest(const mbgl::Resource&) const override;
     NodeMap* nodeMap;
 };
 

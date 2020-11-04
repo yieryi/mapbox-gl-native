@@ -11,13 +11,14 @@
 #include <mbgl/tile/tile.hpp>
 
 #include <mbgl/layermanager/layer_manager.hpp>
+#include <mbgl/util/constants.hpp>
 #include <utility>
 
 namespace mbgl {
 
 using namespace style;
 
-std::unique_ptr<RenderSource> RenderSource::create(Immutable<Source::Impl> impl) {
+std::unique_ptr<RenderSource> RenderSource::create(const Immutable<Source::Impl>& impl) {
     switch (impl->type) {
     case SourceType::Vector:
         return std::make_unique<RenderVectorSource>(staticImmutableCast<VectorSource::Impl>(impl));
@@ -71,6 +72,11 @@ void RenderSource::onTileError(Tile& tile, std::exception_ptr error) {
 
 bool RenderSource::isEnabled() const {
     return enabled;
+}
+
+uint8_t RenderSource::getMaxZoom() const { 
+    assert(false);
+    return util::TERRAIN_RGB_MAXZOOM;
 }
 
 } // namespace mbgl

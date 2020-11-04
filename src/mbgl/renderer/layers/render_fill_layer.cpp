@@ -1,39 +1,44 @@
-#include <mbgl/renderer/layers/render_fill_layer.hpp>
-#include <mbgl/renderer/buckets/fill_bucket.hpp>
-#include <mbgl/renderer/render_tile.hpp>
-#include <mbgl/renderer/render_source.hpp>
-#include <mbgl/renderer/paint_parameters.hpp>
-#include <mbgl/renderer/image_manager.hpp>
-#include <mbgl/programs/programs.hpp>
-#include <mbgl/programs/fill_program.hpp>
-#include <mbgl/tile/tile.hpp>
-#include <mbgl/style/layers/fill_layer_impl.hpp>
 #include <mbgl/geometry/feature_index.hpp>
-#include <mbgl/gfx/renderer_backend.hpp>
-#include <mbgl/gfx/cull_face_mode.hpp>
 #include <mbgl/gfx/context.hpp>
+#include <mbgl/gfx/cull_face_mode.hpp>
 #include <mbgl/gfx/renderable.hpp>
-#include <mbgl/util/math.hpp>
-#include <mbgl/util/intersection_tests.hpp>
+#include <mbgl/gfx/renderer_backend.hpp>
+#include <mbgl/programs/fill_program.hpp>
+#include <mbgl/programs/programs.hpp>
+#include <mbgl/renderer/buckets/fill_bucket.hpp>
+#include <mbgl/renderer/image_manager.hpp>
+#include <mbgl/renderer/layers/render_fill_layer.hpp>
+#include <mbgl/renderer/paint_parameters.hpp>
+#include <mbgl/renderer/render_source.hpp>
+#include <mbgl/renderer/render_tile.hpp>
+#include <mbgl/style/expression/image.hpp>
+#include <mbgl/style/layers/fill_layer_impl.hpp>
 #include <mbgl/tile/geometry_tile.hpp>
+#include <mbgl/tile/tile.hpp>
+#include <mbgl/util/intersection_tests.hpp>
+#include <mbgl/util/math.hpp>
 
 namespace mbgl {
 
 using namespace style;
 
-inline const FillLayer::Impl& impl(const Immutable<style::Layer::Impl>& impl) {
+namespace {
+
+inline const FillLayer::Impl& impl_cast(const Immutable<style::Layer::Impl>& impl) {
+    assert(impl->getTypeInfo() == FillLayer::Impl::staticTypeInfo());
     return static_cast<const FillLayer::Impl&>(*impl);
 }
 
+} // namespace
+
 RenderFillLayer::RenderFillLayer(Immutable<style::FillLayer::Impl> _impl)
     : RenderLayer(makeMutable<FillLayerProperties>(std::move(_impl))),
-      unevaluated(impl(baseImpl).paint.untransitioned()) {
-}
+      unevaluated(impl_cast(baseImpl).paint.untransitioned()) {}
 
 RenderFillLayer::~RenderFillLayer() = default;
 
 void RenderFillLayer::transition(const TransitionParameters& parameters) {
-    unevaluated = impl(baseImpl).paint.transitioned(parameters, std::move(unevaluated));
+    unevaluated = impl_cast(baseImpl).paint.transitioned(parameters, std::move(unevaluated));
 }
 
 void RenderFillLayer::evaluate(const PropertyEvaluationParameters& parameters) {
@@ -47,20 +52,15 @@ void RenderFillLayer::evaluate(const PropertyEvaluationParameters& parameters) {
         evaluated.get<style::FillOutlineColor>() = evaluated.get<style::FillColor>();
     }
 
-    passes = RenderPass::None;
+    passes = RenderPass::Translucent;
 
-    if (evaluated.get<style::FillAntialias>()) {
-        passes |= RenderPass::Translucent;
-    }
-
-    if (!unevaluated.get<style::FillPattern>().isUndefined()
+    if (!(!unevaluated.get<style::FillPattern>().isUndefined()
         || evaluated.get<style::FillColor>().constantOr(Color()).a < 1.0f
-        || evaluated.get<style::FillOpacity>().constantOr(0) < 1.0f) {
-        passes |= RenderPass::Translucent;
-    } else {
+        || evaluated.get<style::FillOpacity>().constantOr(0) < 1.0f)) {
+        // Supply both - evaluated based on opaquePassCutoff in render().
         passes |= RenderPass::Opaque;
     }
-
+    properties->renderPasses = mbgl::underlying_type(passes);
     evaluatedProperties = std::move(properties);
 }
 
@@ -73,10 +73,11 @@ bool RenderFillLayer::hasCrossfade() const {
 }
 
 void RenderFillLayer::render(PaintParameters& parameters) {
+    assert(renderTiles);
     if (unevaluated.get<FillPattern>().isUndefined()) {
         parameters.renderTileClippingMasks(renderTiles);
-        for (const RenderTile& tile : renderTiles) {
-            const LayerRenderData* renderData = tile.getLayerRenderData(*baseImpl);
+        for (const RenderTile& tile : *renderTiles) {
+            const LayerRenderData* renderData = getRenderDataForPass(tile, parameters.pass);
             if (!renderData) {
                 continue;
             }
@@ -112,28 +113,25 @@ void RenderFillLayer::render(PaintParameters& parameters) {
 
                 checkRenderability(parameters, programInstance.activeBindingCount(allAttributeBindings));
 
-                programInstance.draw(
-                    parameters.context,
-                    *parameters.renderPass,
-                    drawMode,
-                    depthMode,
-                    parameters.stencilModeForClipping(tile.id),
-                    parameters.colorModeForRenderPass(),
-                    gfx::CullFaceMode::disabled(),
-                    indexBuffer,
-                    segments,
-                    allUniformValues,
-                    allAttributeBindings,
-                    std::move(textureBindings),
-                    getID()
-                );
+                programInstance.draw(parameters.context,
+                                     *parameters.renderPass,
+                                     drawMode,
+                                     depthMode,
+                                     parameters.stencilModeForClipping(tile.id),
+                                     parameters.colorModeForRenderPass(),
+                                     gfx::CullFaceMode::disabled(),
+                                     indexBuffer,
+                                     segments,
+                                     allUniformValues,
+                                     allAttributeBindings,
+                                     std::forward<decltype(textureBindings)>(textureBindings),
+                                     getID());
             };
 
-            // Only draw the fill when it's opaque and we're drawing opaque fragments,
-            // or when it's translucent and we're drawing translucent fragments.
-            if (bucket.triangleIndexBuffer &&
-              (evaluated.get<FillColor>().constantOr(Color()).a >= 1.0f &&
-               evaluated.get<FillOpacity>().constantOr(0) >= 1.0f) == (parameters.pass == RenderPass::Opaque)) {
+            auto fillRenderPass = (evaluated.get<FillColor>().constantOr(Color()).a >= 1.0f
+                && evaluated.get<FillOpacity>().constantOr(0) >= 1.0f
+                && parameters.currentLayer >= parameters.opaquePassCutoff) ? RenderPass::Opaque : RenderPass::Translucent;
+            if (bucket.triangleIndexBuffer && parameters.pass == fillRenderPass) {
                 draw(parameters.programs.getFillLayerPrograms().fill,
                      gfx::Triangles(),
                      parameters.depthModeForSublayer(1, parameters.pass == RenderPass::Opaque
@@ -162,8 +160,8 @@ void RenderFillLayer::render(PaintParameters& parameters) {
 
         parameters.renderTileClippingMasks(renderTiles);
 
-        for (const RenderTile& tile : renderTiles) {
-            const LayerRenderData* renderData = tile.getLayerRenderData(*baseImpl);
+        for (const RenderTile& tile : *renderTiles) {
+            const LayerRenderData* renderData = getRenderDataForPass(tile, parameters.pass);
             if (!renderData) {
                 continue;
             }
@@ -171,9 +169,9 @@ void RenderFillLayer::render(PaintParameters& parameters) {
             const auto& evaluated = getEvaluated<FillLayerProperties>(renderData->layerProperties);
             const auto& crossfade = getCrossfade<FillLayerProperties>(renderData->layerProperties);
 
-            const auto& fillPatternValue = evaluated.get<FillPattern>().constantOr(Faded<std::basic_string<char>>{"", ""});
-            optional<ImagePosition> patternPosA = tile.getPattern(fillPatternValue.from);
-            optional<ImagePosition> patternPosB = tile.getPattern(fillPatternValue.to);
+            const auto& fillPatternValue = evaluated.get<FillPattern>().constantOr(Faded<expression::Image>{"", ""});
+            optional<ImagePosition> patternPosA = tile.getPattern(fillPatternValue.from.id());
+            optional<ImagePosition> patternPosB = tile.getPattern(fillPatternValue.to.id());
 
             auto draw = [&] (auto& programInstance,
                              const auto& drawMode,
@@ -208,21 +206,19 @@ void RenderFillLayer::render(PaintParameters& parameters) {
 
                 checkRenderability(parameters, programInstance.activeBindingCount(allAttributeBindings));
 
-                programInstance.draw(
-                    parameters.context,
-                    *parameters.renderPass,
-                    drawMode,
-                    depthMode,
-                    parameters.stencilModeForClipping(tile.id),
-                    parameters.colorModeForRenderPass(),
-                    gfx::CullFaceMode::disabled(),
-                    indexBuffer,
-                    segments,
-                    allUniformValues,
-                    allAttributeBindings,
-                    std::move(textureBindings),
-                    getID()
-                );
+                programInstance.draw(parameters.context,
+                                     *parameters.renderPass,
+                                     drawMode,
+                                     depthMode,
+                                     parameters.stencilModeForClipping(tile.id),
+                                     parameters.colorModeForRenderPass(),
+                                     gfx::CullFaceMode::disabled(),
+                                     indexBuffer,
+                                     segments,
+                                     allUniformValues,
+                                     allAttributeBindings,
+                                     std::forward<decltype(textureBindings)>(textureBindings),
+                                     getID());
             };
 
             if (bucket.triangleIndexBuffer) {
@@ -249,13 +245,10 @@ void RenderFillLayer::render(PaintParameters& parameters) {
     }
 }
 
-bool RenderFillLayer::queryIntersectsFeature(
-        const GeometryCoordinates& queryGeometry,
-        const GeometryTileFeature& feature,
-        const float,
-        const TransformState& transformState,
-        const float pixelsToTileUnits,
-        const mat4&) const {
+bool RenderFillLayer::queryIntersectsFeature(const GeometryCoordinates& queryGeometry,
+                                             const GeometryTileFeature& feature, const float,
+                                             const TransformState& transformState, const float pixelsToTileUnits,
+                                             const mat4&, const FeatureState&) const {
     const auto& evaluated = getEvaluated<FillLayerProperties>(evaluatedProperties);
     auto translatedQueryGeometry = FeatureIndex::translateQueryGeometry(
             queryGeometry,
@@ -266,6 +259,5 @@ bool RenderFillLayer::queryIntersectsFeature(
 
     return util::polygonIntersectsMultiPolygon(translatedQueryGeometry.value_or(queryGeometry), feature.getGeometries());
 }
-
 
 } // namespace mbgl

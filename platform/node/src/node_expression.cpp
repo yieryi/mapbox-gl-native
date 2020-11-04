@@ -35,15 +35,15 @@ void NodeExpression::Init(v8::Local<v8::Object> target) {
 }
 
 type::Type parseType(v8::Local<v8::Object> type) {
-    static std::unordered_map<std::string, type::Type> types = {
-        {"string", type::String},
-        {"number", type::Number},
-        {"boolean", type::Boolean},
-        {"object", type::Object},
-        {"color", type::Color},
-        {"value", type::Value},
-        {"formatted", type::Formatted}
-    };
+    static std::unordered_map<std::string, type::Type> types = {{"string", type::String},
+                                                                {"number", type::Number},
+                                                                {"boolean", type::Boolean},
+                                                                {"object", type::Object},
+                                                                {"color", type::Color},
+                                                                {"value", type::Value},
+                                                                {"formatted", type::Formatted},
+                                                                {"number-format", type::String},
+                                                                {"resolvedImage", type::Image}};
 
     v8::Local<v8::Value> v8kind = Nan::Get(type, Nan::New("kind").ToLocalChecked()).ToLocalChecked();
     std::string kind(*v8::String::Utf8Value(v8kind));
@@ -94,7 +94,7 @@ void NodeExpression::Parse(const Nan::FunctionCallbackInfo<v8::Value>& info) {
             Nan::Set(err,
                     Nan::New("error").ToLocalChecked(),
                     Nan::New(error.message.c_str()).ToLocalChecked());
-            Nan::Set(result, Nan::New((uint32_t)i), err);
+            Nan::Set(result, Nan::New(static_cast<uint32_t>(i)), err);
         }
         info.GetReturnValue().Set(result);
     };
@@ -157,7 +157,7 @@ struct ToValue {
     v8::Local<v8::Value> operator()(const std::vector<Value>& array) {
         Nan::EscapableHandleScope scope;
         v8::Local<v8::Array> result = Nan::New<v8::Array>();
-        for (unsigned int i = 0; i < array.size(); i++) {
+        for (std::size_t i = 0; i < array.size(); i++) {
             result->Set(i, toJS(array[i]));
         }
         return scope.Escape(result);
@@ -191,6 +191,11 @@ struct ToValue {
             } else {
                 serializedSection.emplace("fontStack", mbgl::NullValue());
             }
+            if (section.textColor) {
+                serializedSection.emplace("textColor", section.textColor->toObject());
+            } else {
+                serializedSection.emplace("textColor", mbgl::NullValue());
+            }
             sections.emplace_back(serializedSection);
         }
         serialized.emplace("sections", sections);
@@ -216,6 +221,8 @@ struct ToValue {
 
         return scope.Escape(result);
     }
+
+    v8::Local<v8::Value> operator()(const Image& image) { return toJS(image.toValue()); }
 };
 
 v8::Local<v8::Value> toJS(const Value& value) {

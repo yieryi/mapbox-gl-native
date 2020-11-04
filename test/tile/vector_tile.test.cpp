@@ -25,23 +25,21 @@ public:
     std::shared_ptr<FileSource> fileSource = std::make_shared<FakeFileSource>();
     TransformState transformState;
     util::RunLoop loop;
-    style::Style style { *fileSource, 1 };
+    style::Style style{fileSource, 1};
     AnnotationManager annotationManager { style };
     ImageManager imageManager;
     GlyphManager glyphManager;
     Tileset tileset { { "https://example.com" }, { 0, 22 }, "none" };
 
-    TileParameters tileParameters {
-        1.0,
-        MapDebugOptions(),
-        transformState,
-        fileSource,
-        MapMode::Continuous,
-        annotationManager,
-        imageManager,
-        glyphManager,
-        0
-    };
+    TileParameters tileParameters{1.0,
+                                  MapDebugOptions(),
+                                  transformState,
+                                  fileSource,
+                                  MapMode::Continuous,
+                                  annotationManager.makeWeakPtr(),
+                                  imageManager,
+                                  glyphManager,
+                                  0};
 };
 
 TEST(VectorTile, setError) {
@@ -91,6 +89,8 @@ TEST(VectorTileData, ParseResults) {
         ASSERT_TRUE(false) << "should throw: feature index is out of range.";
     } catch (const std::out_of_range&) {
         ASSERT_TRUE(true);
+    } catch (...) { // needed for iOS when MBGL_WITH_RTTI=OFF
+        ASSERT_TRUE(true);
     }
 
     std::unique_ptr<GeometryTileFeature> feature = layer->getFeature(0u);
@@ -98,7 +98,7 @@ TEST(VectorTileData, ParseResults) {
     ASSERT_TRUE(feature->getID().is<uint64_t>());
     ASSERT_EQ(feature->getID().get<uint64_t>(), 1u);
 
-    std::unordered_map<std::string, Value> properties = feature->getProperties();
+    const std::unordered_map<std::string, Value>& properties = feature->getProperties();
     ASSERT_EQ(properties.size(), 3u);
     ASSERT_EQ(properties.at("disputed"), *feature->getValue("disputed"));
 

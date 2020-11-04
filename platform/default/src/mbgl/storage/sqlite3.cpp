@@ -6,10 +6,10 @@
 #include <cstring>
 #include <cstdio>
 #include <chrono>
-#include <optional.hpp>
 
 #include <mbgl/util/traits.hpp>
 #include <mbgl/util/logging.hpp>
+#include <mbgl/util/optional.hpp>
 
 namespace mapbox {
 namespace sqlite {
@@ -46,9 +46,7 @@ void setTempPath(const std::string& path) {
 
 class DatabaseImpl {
 public:
-    DatabaseImpl(sqlite3* db_)
-        : db(db_)
-    {
+    explicit DatabaseImpl(sqlite3* db_) : db(db_) {
         const int error = sqlite3_extended_result_codes(db, true);
         if (error != SQLITE_OK) {
             mbgl::Log::Warning(mbgl::Event::Database, error, "Failed to enable extended result codes: %s", sqlite3_errmsg(db));
@@ -98,10 +96,6 @@ public:
     int64_t changes = 0;
 };
 
-template <typename T>
-using optional = std::experimental::optional<T>;
-
-
 #ifndef NDEBUG
 void logSqlMessage(void *, const int err, const char *msg) {
     mbgl::Log::Record(mbgl::EventSeverity::Debug, mbgl::Event::Database, err, "%s", msg);
@@ -129,6 +123,7 @@ mapbox::util::variant<Database, Exception> Database::tryOpen(const std::string &
     const int error = sqlite3_open_v2(filename.c_str(), &db, flags | SQLITE_OPEN_URI, nullptr);
     if (error != SQLITE_OK) {
         const auto message = sqlite3_errmsg(db);
+        sqlite3_close(db);
         return Exception { error, message };
     }
     return Database(std::make_unique<DatabaseImpl>(db));
@@ -137,7 +132,7 @@ mapbox::util::variant<Database, Exception> Database::tryOpen(const std::string &
 Database Database::open(const std::string &filename, int flags) {
     auto result = tryOpen(filename, flags);
     if (result.is<Exception>()) {
-        throw result.get<Exception>();
+        throw std::move(result.get<Exception>());
     } else {
         return std::move(result.get<Database>());
     }
@@ -147,10 +142,9 @@ Database::Database(std::unique_ptr<DatabaseImpl> impl_)
     : impl(std::move(impl_))
 {}
 
-Database::Database(Database &&other)
-    : impl(std::move(other.impl)) {}
+Database::Database(Database&& other) noexcept : impl(std::move(other.impl)) {}
 
-Database &Database::operator=(Database &&other) {
+Database& Database::operator=(Database&& other) noexcept {
     std::swap(impl, other.impl);
     return *this;
 }
@@ -191,6 +185,7 @@ Statement::Statement(Database& db, const char* sql)
     : impl(std::make_unique<StatementImpl>(db.impl->db, sql)) {
 }
 
+// NOLINTNEXTLINE(modernize-use-equals-default)
 Statement::~Statement() {
 #ifndef NDEBUG
     // Crash if we're destructing this object while we know a Query object references this.
@@ -309,7 +304,7 @@ void Query::bind(
     stmt.impl->check(sqlite3_bind_int64(stmt.impl->stmt, offset, std::chrono::system_clock::to_time_t(value)));
 }
 
-template <> void Query::bind(int offset, optional<std::string> value) {
+template <> void Query::bind(int offset, mbgl::optional<std::string> value) {
     if (!value) {
         bind(offset, nullptr);
     } else {
@@ -320,7 +315,7 @@ template <> void Query::bind(int offset, optional<std::string> value) {
 template <>
 void Query::bind(
     int offset,
-    optional<std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>> value) {
+    mbgl::optional<std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>> value) {
     if (!value) {
         bind(offset, nullptr);
     } else {
@@ -387,39 +382,39 @@ Query::get(int offset) {
         std::chrono::system_clock::from_time_t(sqlite3_column_int64(stmt.impl->stmt, offset)));
 }
 
-template <> optional<int64_t> Query::get(int offset) {
+template <> mbgl::optional<int64_t> Query::get(int offset) {
     assert(stmt.impl);
     if (sqlite3_column_type(stmt.impl->stmt, offset) == SQLITE_NULL) {
-        return optional<int64_t>();
+        return mbgl::nullopt;
     } else {
         return get<int64_t>(offset);
     }
 }
 
-template <> optional<double> Query::get(int offset) {
+template <> mbgl::optional<double> Query::get(int offset) {
     assert(stmt.impl);
     if (sqlite3_column_type(stmt.impl->stmt, offset) == SQLITE_NULL) {
-        return optional<double>();
+        return mbgl::nullopt;
     } else {
         return get<double>(offset);
     }
 }
 
-template <> optional<std::string> Query::get(int offset) {
+template <> mbgl::optional<std::string> Query::get(int offset) {
     assert(stmt.impl);
     if (sqlite3_column_type(stmt.impl->stmt, offset) == SQLITE_NULL) {
-        return optional<std::string>();
+        return mbgl::nullopt;
     } else {
         return get<std::string>(offset);
     }
 }
 
 template <>
-optional<std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>>
+mbgl::optional<std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>>
 Query::get(int offset) {
     assert(stmt.impl);
     if (sqlite3_column_type(stmt.impl->stmt, offset) == SQLITE_NULL) {
-        return {};
+        return mbgl::nullopt;
     } else {
         return get<std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>>(
             offset);

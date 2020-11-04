@@ -28,28 +28,27 @@ void RenderAnnotationSource::update(Immutable<style::Source::Impl> baseImpl_,
 
     enabled = needsRendering;
 
-    tilePyramid.update(layers,
-                       needsRendering,
-                       needsRelayout,
-                       parameters,
-                       SourceType::Annotations,
-                       util::tileSize,
-                       // Zoom level 16 is typically sufficient for annotations.
-                       // See https://github.com/mapbox/mapbox-gl-native/issues/10197
-                       { 0, 16 },
-                       optional<LatLngBounds> {},
-                       [&] (const OverscaledTileID& tileID) {
-                           return std::make_unique<AnnotationTile>(tileID, parameters);
-                       });
+    tilePyramid.update(
+        layers,
+        needsRendering,
+        needsRelayout,
+        parameters,
+        *baseImpl,
+        util::tileSize,
+        // Zoom level 16 is typically sufficient for annotations.
+        // See https://github.com/mapbox/mapbox-gl-native/issues/10197
+        {0, 16},
+        optional<LatLngBounds>{},
+        [&](const OverscaledTileID& tileID) { return std::make_unique<AnnotationTile>(tileID, parameters); });
 }
 
 std::unordered_map<std::string, std::vector<Feature>>
 RenderAnnotationSource::queryRenderedFeatures(const ScreenLineString& geometry,
                                               const TransformState& transformState,
-                                              const std::vector<const RenderLayer*>& layers,
+                                              const std::unordered_map<std::string, const RenderLayer*>& layers,
                                               const RenderedQueryOptions& options,
                                               const mat4& projMatrix) const {
-    return tilePyramid.queryRenderedFeatures(geometry, transformState, layers, options, projMatrix);
+    return tilePyramid.queryRenderedFeatures(geometry, transformState, layers, options, projMatrix, {});
 }
 
 std::vector<Feature> RenderAnnotationSource::querySourceFeatures(const SourceQueryOptions&) const {

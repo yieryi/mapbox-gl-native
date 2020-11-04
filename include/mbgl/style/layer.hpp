@@ -1,10 +1,13 @@
 #pragma once
 
-#include <mbgl/util/peer.hpp>
+#include <mbgl/style/conversion.hpp>
+#include <mbgl/style/style_property.hpp>
+#include <mbgl/style/types.hpp>
 #include <mbgl/util/immutable.hpp>
 #include <mbgl/util/optional.hpp>
-#include <mbgl/style/types.hpp>
-#include <mbgl/style/conversion.hpp>
+
+#include <mapbox/std/weak.hpp>
+#include <mapbox/util/type_wrapper.hpp>
 
 #include <cassert>
 #include <memory>
@@ -55,6 +58,12 @@ struct LayerTypeInfo {
      * requires cross-tile indexing and placement. Contains \c CrossTileIndex::NotRequired otherwise.
      */
     const enum class CrossTileIndex { Required, NotRequired } crossTileIndex;
+
+    /**
+     * @brief contains the Id of the supported tile type. Used for internal checks.
+     * The contained values correspond to \c Tile::Kind enum.
+     */
+    const enum class TileKind : uint8_t { Geometry, Raster, RasterDEM, NotRequired } tileKind;
 };
 
 /**
@@ -85,6 +94,7 @@ public:
     std::string getSourceID() const;
     std::string getSourceLayer() const;
     void setSourceLayer(const std::string& sourceLayer);
+    void setSourceID(const std::string& sourceID);
 
     // Filter
     const Filter& getFilter() const;
@@ -101,9 +111,10 @@ public:
     void setMaxZoom(float);
 
     // Dynamic properties
-    virtual optional<conversion::Error> setLayoutProperty(const std::string& name, const conversion::Convertible& value) = 0;
-    virtual optional<conversion::Error> setPaintProperty(const std::string& name, const conversion::Convertible& value) = 0;
-    optional<conversion::Error> setVisibility(const conversion::Convertible& value);
+    optional<conversion::Error> setProperty(const std::string& name, const conversion::Convertible& value);
+
+    virtual StyleProperty getProperty(const std::string&) const = 0;
+    virtual Value serialize() const;
 
     // Private implementation
     // TODO : We should not have public mutable data members.
@@ -119,15 +130,27 @@ public:
     // For use in SDK bindings, which store a reference to a platform-native peer
     // object here, so that separately-obtained references to this object share
     // identical platform-native peers.
-    util::peer peer;
+    mapbox::base::TypeWrapper peer;
     Layer(Immutable<Impl>);
 
     const LayerTypeInfo* getTypeInfo() const noexcept;
 
+    mapbox::base::WeakPtr<Layer> makeWeakPtr() {
+        return weakFactory.makeWeakPtr();
+    }
+
 protected:
     virtual Mutable<Impl> mutableBaseImpl() const = 0;
-
+    void serializeProperty(Value&, const StyleProperty&, const char* propertyName, bool isPaint) const;
+    virtual optional<conversion::Error> setPropertyInternal(const std::string& name,
+                                                            const conversion::Convertible& value) = 0;
     LayerObserver* observer;
+    mapbox::base::WeakPtrFactory<Layer> weakFactory {this};
+
+private:
+    optional<conversion::Error> setVisibility(const conversion::Convertible& value);
+    optional<conversion::Error> setMinZoom(const conversion::Convertible& value);
+    optional<conversion::Error> setMaxZoom(const conversion::Convertible& value);
 };
 
 } // namespace style

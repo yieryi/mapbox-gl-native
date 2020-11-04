@@ -4,16 +4,12 @@
 
 #include <mbgl/util/http_header.hpp>
 #include <mbgl/util/async_task.hpp>
+#include <mbgl/util/async_request.hpp>
 #include <mbgl/util/version.hpp>
 
 #import <Foundation/Foundation.h>
 
-#import "MGLLoggingConfiguration_Private.h"
-#import "MGLNetworkConfiguration_Private.h"
-
-#if TARGET_OS_IPHONE || TARGET_OS_SIMULATOR
-#import "MGLAccountManager_Private.h"
-#endif
+#include <mbgl/interface/native_apple_interface.h>
 
 #include <mutex>
 #include <chrono>
@@ -88,21 +84,15 @@ class HTTPFileSource::Impl {
 public:
     Impl() {
         @autoreleasepool {
-
-            NSURLSessionConfiguration *sessionConfig =
-            [MGLNetworkConfiguration sharedManager].sessionConfiguration;
-            
+            NSURLSessionConfiguration *sessionConfig = MGLNativeNetworkManager.sharedManager.sessionConfiguration;
             session = [NSURLSession sessionWithConfiguration:sessionConfig];
 
             userAgent = getUserAgent();
-
-            accountType = [[NSUserDefaults standardUserDefaults] integerForKey:@"MGLMapboxAccountType"];
         }
     }
 
     NSURLSession* session = nil;
     NSString* userAgent = nil;
-    NSInteger accountType = 0;
 
 private:
     NSString* getUserAgent() const;
@@ -196,22 +186,29 @@ HTTPFileSource::HTTPFileSource()
 
 HTTPFileSource::~HTTPFileSource() = default;
 
-MGL_EXPORT
-NSURL *resourceURLWithAccountType(const Resource& resource, NSInteger accountType) {
+MGL_APPLE_EXPORT
+BOOL isValidMapboxEndpoint(NSURL *url) {
+    return ([url.host isEqualToString:@"mapbox.com"] ||
+            [url.host hasSuffix:@".mapbox.com"] ||
+            [url.host isEqualToString:@"mapbox.cn"] ||
+            [url.host hasSuffix:@".mapbox.cn"]);
+}
+
+MGL_APPLE_EXPORT
+NSURL *resourceURL(const Resource& resource) {
     
     NSURL *url = [NSURL URLWithString:@(resource.url.c_str())];
-    
+
 #if TARGET_OS_IPHONE || TARGET_OS_SIMULATOR
-    if (accountType == 0 &&
-        ([url.host isEqualToString:@"mapbox.com"] || [url.host hasSuffix:@".mapbox.com"])) {
+    if (isValidMapboxEndpoint(url)) {
         NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
-        NSURLQueryItem *accountsQueryItem = [NSURLQueryItem queryItemWithName:@"sku" value:MGLAccountManager.skuToken];
-        
-        NSMutableArray *queryItems = [NSMutableArray arrayWithObject:accountsQueryItem];
-        
-        // offline here
+        NSMutableArray *queryItems = [NSMutableArray array];
+
         if (resource.usage == Resource::Usage::Offline) {
             [queryItems addObject:[NSURLQueryItem queryItemWithName:@"offline" value:@"true"]];
+        } else {
+            // Only add SKU token to requests not tagged as "offline" usage.
+            [queryItems addObject:[NSURLQueryItem queryItemWithName:@"sku" value:MGLNativeNetworkManager.sharedManager.skuToken]];
         }
         
         if (components.queryItems) {
@@ -221,8 +218,6 @@ NSURL *resourceURLWithAccountType(const Resource& resource, NSInteger accountTyp
         components.queryItems = queryItems;
         url = components.URL;
     }
-#else
-    (void)accountType;
 #endif
     return url;
 }
@@ -232,8 +227,8 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
     auto shared = request->shared; // Explicit copy so that it also gets copied into the completion handler block below.
 
     @autoreleasepool {
-        NSURL *url = resourceURLWithAccountType(resource, impl->accountType);
-        MGLLogDebug(@"Requesting URI: %@", url.relativePath);
+        NSURL *url = resourceURL(resource);
+        [MGLNativeNetworkManager.sharedManager debugLog:@"Requesting URI: %@", url.relativePath];
 
         NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
         if (resource.priorEtag) {
@@ -245,24 +240,43 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
         }
 
         [req addValue:impl->userAgent forHTTPHeaderField:@"User-Agent"];
-        
-        if (resource.kind == mbgl::Resource::Kind::Tile) {
-            [[MGLNetworkConfiguration sharedManager] startDownloadEvent:url.relativePath type:@"tile"];
+
+        const bool isTile = resource.kind == mbgl::Resource::Kind::Tile;
+
+        if (isTile) {
+            [MGLNativeNetworkManager.sharedManager startDownloadEvent:url.relativePath type:@"tile"];
         }
-        
-        request->task = [impl->session
+
+        __block NSURLSession *session;
+
+        // Use the delegate's session if there is one, otherwise use the one that
+        // was created when this class was constructed.
+        MGLNativeNetworkManager *networkManager = MGLNativeNetworkManager.sharedManager;
+        if ([networkManager.delegate respondsToSelector:@selector(sessionForNetworkManager:)]) {
+            session = [networkManager.delegate sessionForNetworkManager:networkManager];
+        }
+
+        if (!session) {
+            session = impl->session;
+        }
+
+        assert(session);
+
+        request->task = [session
             dataTaskWithRequest:req
               completionHandler:^(NSData* data, NSURLResponse* res, NSError* error) {
+                session = nil;
+            
                 if (error && [error code] == NSURLErrorCancelled) {
-                    [[MGLNetworkConfiguration sharedManager] cancelDownloadEventForResponse:res];
+                    [MGLNativeNetworkManager.sharedManager cancelDownloadEventForResponse:res];
                     return;
                 }
-                [[MGLNetworkConfiguration sharedManager] stopDownloadEventForResponse:res];
+                [MGLNativeNetworkManager.sharedManager stopDownloadEventForResponse:res];
                 Response response;
                 using Error = Response::Error;
 
                 if (error) {
-                    MGLLogError(@"Requesting: %@ failed with error: %@", res.URL.relativePath, error);
+                    [MGLNativeNetworkManager.sharedManager errorLog:@"Requesting: %@ failed with error: %@", res.URL.relativePath, error];
                     
                     if (data) {
                         response.data =
@@ -295,7 +309,7 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
                     }
                 } else if ([res isKindOfClass:[NSHTTPURLResponse class]]) {
                     const long responseCode = [(NSHTTPURLResponse *)res statusCode];
-                    MGLLogDebug(@"Requesting %@ returned responseCode: %lu", res.URL.relativePath, responseCode);
+                    [MGLNativeNetworkManager.sharedManager debugLog:@"Requesting %@ returned responseCode: %lu", res.URL.relativePath, responseCode];
 
                     NSDictionary *headers = [(NSHTTPURLResponse *)res allHeaderFields];
                     NSString *cache_control = [headers objectForKey:@"Cache-Control"];
@@ -322,7 +336,7 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
 
                     if (responseCode == 200) {
                         response.data = std::make_shared<std::string>((const char *)[data bytes], [data length]);
-                    } else if (responseCode == 204 || (responseCode == 404 && resource.kind == Resource::Kind::Tile)) {
+                    } else if (responseCode == 204 || (responseCode == 404 && isTile)) {
                         response.noContent = true;
                     } else if (responseCode == 304) {
                         response.notModified = true;
@@ -354,6 +368,8 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
                             std::make_unique<Error>(Error::Reason::Other, std::string{ "HTTP status code " } +
                                                                               std::to_string(responseCode));
                     }
+                } else if ([url isFileURL]) {
+                    response.data = std::make_shared<std::string>((const char *)[data bytes], [data length]);
                 } else {
                     // This should never happen.
                     response.error = std::make_unique<Error>(Error::Reason::Other,

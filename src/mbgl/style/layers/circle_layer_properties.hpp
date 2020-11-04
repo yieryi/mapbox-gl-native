@@ -1,3 +1,5 @@
+// clang-format off
+
 // This file is generated. Edit scripts/generate-style-code.js, then run `make style-code`.
 
 #pragma once
@@ -13,6 +15,11 @@
 
 namespace mbgl {
 namespace style {
+
+struct CircleSortKey : DataDrivenLayoutProperty<float> {
+    static constexpr const char *name() { return "circle-sort-key"; }
+    static float defaultValue() { return 0; }
+};
 
 struct CircleBlur : DataDrivenPaintProperty<float, attributes::blur, uniforms::blur> {
     static float defaultValue() { return 0; }
@@ -51,12 +58,16 @@ struct CircleStrokeWidth : DataDrivenPaintProperty<float, attributes::stroke_wid
 };
 
 struct CircleTranslate : PaintProperty<std::array<float, 2>> {
-    static std::array<float, 2> defaultValue() { return {{ 0, 0 }}; }
+    static std::array<float, 2> defaultValue() { return {{0, 0}}; }
 };
 
 struct CircleTranslateAnchor : PaintProperty<TranslateAnchorType> {
     static TranslateAnchorType defaultValue() { return TranslateAnchorType::Map; }
 };
+
+class CircleLayoutProperties : public Properties<
+    CircleSortKey
+> {};
 
 class CirclePaintProperties : public Properties<
     CircleBlur,
@@ -80,6 +91,8 @@ public:
         CirclePaintProperties::PossiblyEvaluated);
     ~CircleLayerProperties() override;
 
+    unsigned long constantsMask() const override;
+
     const CircleLayer::Impl& layerImpl() const;
     // Data members.
     CirclePaintProperties::PossiblyEvaluated evaluated;
@@ -87,3 +100,5 @@ public:
 
 } // namespace style
 } // namespace mbgl
+
+// clang-format on

@@ -4,7 +4,7 @@
 #include <mbgl/text/glyph_atlas.hpp>
 #include <mbgl/text/collision_feature.hpp>
 #include <mbgl/style/layers/symbol_layer_properties.hpp>
-
+#include <mbgl/util/bitmask_operations.hpp>
 
 namespace mbgl {
 
@@ -21,45 +21,87 @@ struct ShapedTextOrientations {
     bool singleLine = false;
 };
 
-class SymbolInstance {
-public:
-    SymbolInstance(Anchor& anchor,
-                   GeometryCoordinates line,
-                   const ShapedTextOrientations& shapedTextOrientations,
-                   optional<PositionedIcon> shapedIcon,
-                   const style::SymbolLayoutProperties::Evaluated&,
-                   const float layoutTextSize,
-                   const float textBoxScale,
-                   const float textPadding,
-                   style::SymbolPlacementType textPlacement,
-                   const std::array<float, 2> textOffset,
-                   const float iconBoxScale,
-                   const float iconPadding,
-                   const std::array<float, 2> iconOffset,
-                   const GlyphPositions&,
-                   const IndexedSubfeature&,
-                   const std::size_t layoutFeatureIndex,
-                   const std::size_t dataFeatureIndex,
-                   std::u16string key,
-                   const float overscaling,
-                   const float rotate,
-                   float radialTextOffset);
+enum class SymbolContent : uint8_t { None = 0, Text = 1 << 0, IconRGBA = 1 << 1, IconSDF = 1 << 2 };
 
-    optional<size_t> getDefaultHorizontalPlacedTextIndex() const;
-    Anchor anchor;
+struct SymbolInstanceSharedData {
+    SymbolInstanceSharedData(GeometryCoordinates line,
+                             const ShapedTextOrientations& shapedTextOrientations,
+                             const optional<PositionedIcon>& shapedIcon,
+                             const optional<PositionedIcon>& verticallyShapedIcon,
+                             const style::SymbolLayoutProperties::Evaluated& layout,
+                             style::SymbolPlacementType textPlacement,
+                             const std::array<float, 2>& textOffset,
+                             const ImageMap& imageMap,
+                             float iconRotation,
+                             SymbolContent iconType,
+                             bool hasIconTextFit,
+                             bool allowVerticalPlacement);
+    bool empty() const;
     GeometryCoordinates line;
-    bool hasText;
-    bool hasIcon;
     // Note: When singleLine == true, only `rightJustifiedGlyphQuads` is populated.
     SymbolQuads rightJustifiedGlyphQuads;
     SymbolQuads centerJustifiedGlyphQuads;
     SymbolQuads leftJustifiedGlyphQuads;
-
     SymbolQuads verticalGlyphQuads;
+    optional<SymbolQuads> iconQuads;
+    optional<SymbolQuads> verticalIconQuads;
+};
 
-    optional<SymbolQuad> iconQuad;
+class SymbolInstance {
+public:
+    SymbolInstance(Anchor& anchor_,
+                   std::shared_ptr<SymbolInstanceSharedData> sharedData,
+                   const ShapedTextOrientations& shapedTextOrientations,
+                   const optional<PositionedIcon>& shapedIcon,
+                   const optional<PositionedIcon>& verticallyShapedIcon,
+                   float textBoxScale,
+                   float textPadding,
+                   style::SymbolPlacementType textPlacement,
+                   const std::array<float, 2>& textOffset,
+                   float iconBoxScale,
+                   float iconPadding,
+                   const std::array<float, 2>& iconOffset,
+                   const IndexedSubfeature& indexedFeature,
+                   std::size_t layoutFeatureIndex,
+                   std::size_t dataFeatureIndex,
+                   std::u16string key,
+                   float overscaling,
+                   float iconRotation,
+                   float textRotation,
+                   const std::array<float, 2>& variableTextOffset,
+                   bool allowVerticalPlacement,
+                   SymbolContent iconType = SymbolContent::None);
+
+    optional<size_t> getDefaultHorizontalPlacedTextIndex() const;
+    const GeometryCoordinates& line() const;
+    const SymbolQuads& rightJustifiedGlyphQuads() const;
+    const SymbolQuads& leftJustifiedGlyphQuads() const;
+    const SymbolQuads& centerJustifiedGlyphQuads() const;
+    const SymbolQuads& verticalGlyphQuads() const;
+    bool hasText() const;
+    bool hasIcon() const;
+    bool hasSdfIcon() const;
+    const optional<SymbolQuads>& iconQuads() const;
+    const optional<SymbolQuads>& verticalIconQuads() const;
+    void releaseSharedData();
+
+private:
+    std::shared_ptr<SymbolInstanceSharedData> sharedData;
+
+public:
+    Anchor anchor;
+    SymbolContent symbolContent;
+
+    std::size_t rightJustifiedGlyphQuadsSize;
+    std::size_t centerJustifiedGlyphQuadsSize;
+    std::size_t leftJustifiedGlyphQuadsSize;
+    std::size_t verticalGlyphQuadsSize;
+    std::size_t iconQuadsSize;
+
     CollisionFeature textCollisionFeature;
     CollisionFeature iconCollisionFeature;
+    optional<CollisionFeature> verticalTextCollisionFeature = nullopt;
+    optional<CollisionFeature> verticalIconCollisionFeature = nullopt;
     WritingModeType writingModes;
     std::size_t layoutFeatureIndex; // Index into the set of features included at layout time
     std::size_t dataFeatureIndex;   // Index into the underlying tile data feature set
@@ -72,10 +114,15 @@ public:
     optional<size_t> placedLeftTextIndex;
     optional<size_t> placedVerticalTextIndex;
     optional<size_t> placedIconIndex;
+    optional<size_t> placedVerticalIconIndex;
     float textBoxScale;
-    float radialTextOffset;
+    std::array<float, 2> variableTextOffset;
     bool singleLine;
     uint32_t crossTileID = 0;
+
+    static constexpr uint32_t invalidCrossTileID() { return std::numeric_limits<uint32_t>::max(); }
 };
+
+using SymbolInstanceReferences = std::vector<std::reference_wrapper<const SymbolInstance>>;
 
 } // namespace mbgl

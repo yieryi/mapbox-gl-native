@@ -1,11 +1,10 @@
 #pragma once
 
 #include <mbgl/storage/response.hpp>
+#include <mbgl/util/bitmask_operations.hpp>
 #include <mbgl/util/optional.hpp>
 #include <mbgl/util/font_stack.hpp>
 #include <mbgl/util/tileset.hpp>
-#include <mbgl/util/util.hpp>
-#include <mbgl/util/traits.hpp>
 
 #include <string>
 
@@ -33,6 +32,8 @@ public:
         Online,
         Offline
     };
+
+    enum class StoragePolicy : bool { Permanent, Volatile };
 
     struct TileData {
         std::string urlTemplate;
@@ -65,7 +66,7 @@ public:
     void setPriority(Priority p) { priority = p; }
     void setUsage(Usage u) { usage = u; }
 
-    bool hasLoadingMethod(LoadingMethod method);
+    bool hasLoadingMethod(LoadingMethod method) const;
 
     static Resource style(const std::string& url);
     static Resource source(const std::string& url);
@@ -96,23 +97,12 @@ public:
     optional<Timestamp> priorExpires = {};
     optional<std::string> priorEtag = {};
     std::shared_ptr<const std::string> priorData;
+    Duration minimumUpdateInterval{Duration::zero()};
+    StoragePolicy storagePolicy{StoragePolicy::Permanent};
 };
 
-
-MBGL_CONSTEXPR Resource::LoadingMethod operator|(Resource::LoadingMethod a, Resource::LoadingMethod b) {
-    return Resource::LoadingMethod(mbgl::underlying_type(a) | mbgl::underlying_type(b));
-}
-
-MBGL_CONSTEXPR Resource::LoadingMethod& operator|=(Resource::LoadingMethod& a, Resource::LoadingMethod b) {
-    return (a = a | b);
-}
-
-MBGL_CONSTEXPR Resource::LoadingMethod operator&(Resource::LoadingMethod a, Resource::LoadingMethod b) {
-    return Resource::LoadingMethod(mbgl::underlying_type(a) & mbgl::underlying_type(b));
-}
-
-inline bool Resource::hasLoadingMethod(Resource::LoadingMethod method) {
-    return (loadingMethod & method) != Resource::LoadingMethod::None;
+inline bool Resource::hasLoadingMethod(Resource::LoadingMethod method) const {
+    return (loadingMethod & method);
 }
 
 } // namespace mbgl
